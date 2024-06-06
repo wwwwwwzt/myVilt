@@ -1,25 +1,23 @@
 import os
 import pandas as pd
 import numpy as np
-import numpy as np
-
-# mne imports
 import mne
 from mne import io
 from mne.datasets import sample
 from mne.preprocessing import ICA
-
-
-# tools for plotting confusion matrices
 from matplotlib import pyplot as plt
+from imblearn.over_sampling import RandomOverSampler
+import torch
+from PIL import Image
+from torch.utils.data import DataLoader
+import torch.nn as nn
+
 
 # 设置通道数和样本数
 channels = 14
 samples = 384
-
 # 存放数据的文件夹路径
 data_folder = './EEGData/'
-
 # 存储所有数据的列表和标签列表
 data_list = []
 label_list = []
@@ -31,7 +29,6 @@ for file_name in os.listdir(data_folder):
         
         # 使用pandas读取CSV文件，只读取2-15列的数据
         df = pd.read_csv(file_path, usecols=list(range(1, 15)), header=0)
-
         sfreq = 128  # 采样率为128Hz
         ch_names = ['AF3', 'F7', 'F3', 'FC5', 'T7', 'P7', 'O1', 'O2', 'P8', 'T8', 'FC6', 'F4', 'F8', 'AF4']
         ch_types = ['eeg'] * channels
@@ -39,18 +36,14 @@ for file_name in os.listdir(data_folder):
         # 创建MNE的Raw对象
         info = mne.create_info(ch_names=ch_names, ch_types=ch_types, sfreq=sfreq)
         raw = mne.io.RawArray(df.T, info=info)
-
         # 滤波
         raw.filter(l_freq=1.0, h_freq=50.0)
-
         # 创建ICA对象并拟合数据
         ica = ICA(n_components=channels, random_state=0, max_iter=1000)  # 调整参数
         ica.fit(raw)
-
         # 应用ICA滤波
         ica.exclude = []  # 将排除的独立成分列表设置为空
         ica.apply(raw)
-
         # 获取滤波后的数据
         data = raw.get_data().T
 
@@ -58,13 +51,10 @@ for file_name in os.listdir(data_folder):
         # 假设数据的样本数为samples
         num_trials = data.shape[0] // samples
         data = data[:num_trials * samples, :]
-        
         # 重新将数据分成每个trial的形状
         data = data.reshape(num_trials, samples, channels)
-
         # 添加数据到列表中
         data_list.append(data)
-        
         # 添加标签到列表中
         labels = np.zeros(num_trials, dtype=int)
         labels[3:18] = 1  # Trials 4-18 labeled as 1
@@ -73,199 +63,160 @@ for file_name in os.listdir(data_folder):
 
 # 将数据列表转换为numpy数组并按顺序连接
 data_array = np.concatenate(data_list, axis=0)
-
 # 将标签列表转换为numpy数组并按顺序连接
 label_array = np.concatenate(label_list, axis=0)
 
-# 打印数据的形状
-print("Data shape:", data_array.shape)
-print("Label shape:", label_array.shape)
+print("Data shape:", data_array.shape) # (399, 384, 14) 14个通道，每个通道384个样本，总共399个试验数量（18人 x 21个/人）
+print("Label shape:", label_array.shape) # (399,) 399个试验数量
 
-from itertools import combinations
-import os
-import numpy as np
-import pandas as pd
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
-from sklearn.model_selection import StratifiedKFold
-import torchvision.transforms as transforms
-from sklearn.metrics import classification_report
-from imblearn.over_sampling import RandomOverSampler
-from sklearn.metrics import roc_auc_score, f1_score, accuracy_score
-from sklearn.preprocessing import StandardScaler
-
-data = np.array(data_array)
-labels = np.array(label_array)
+# 扩充数据
+ros = RandomOverSampler(sampling_strategy='auto', random_state=42)
+data_array = data_array.reshape(-1, 384*14)
+data, labels = ros.fit_resample(data_array, label_array)
+# data, labels = data_array, label_array
+data = data.reshape(-1,384,14)
+data = data.transpose(0,2,1)
 print(data.shape)
 print(labels.shape)
+# print(labels)
+
+# Check if GPU is available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 print(len(labels[labels == 0]))
 print(len(labels[labels == 1]))
 print(len(labels[labels == 2]))
 
-ros = RandomOverSampler(sampling_strategy='auto', random_state=42)
-# data = data.reshape(-1, 384*14)
-# data, labels = ros.fit_resample(data, labels)
+eeg_data = data
+
+# 创建一个空的numpy数组，用于存放图像数据
+image_data = np.empty((810, 3, 128, 128))
+# 读取图片并存放到numpy数组中
+for i in range(1, 811):
+    filename = f"./facesFromFrames_810/{i}.jpg"
+    image = Image.open(filename)
+    image = image.resize((128, 128))
+    # 将图像数据转换为数组
+    image_array = np.asarray(image)
+    # 将数组添加到image_data中
+    image_data[i-1] = image_array.transpose((2, 0, 1))
+print("image_data.shape:", image_data.shape)
+
+# 使用zip函数将它们组合在一起
+combined_data = list(zip(eeg_data, image_data))
+
+# 现在，combined_data是一个长度为399的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个3x128x128的数组
+print(len(combined_data))  # 输出：(399, 2)
+print(combined_data[0][0].shape)  # 输出：(14, 384)
+print(combined_data[0][1].shape)  # 输出：(3, 128, 128)
+
+data = combined_data
+
+class MultiModalDataset(torch.utils.data.Dataset):
+    def __init__(self, data, labels):
+        self.data = data
+        self.labels = labels
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, index):
+        eeg_data = self.data[index][0].astype(np.float32)
+        image_data = self.data[index][1].astype(np.float32)
+        label = self.labels[index]
+        return eeg_data, image_data, label
+
 
 
 # 随机划分训练集和测试集
 from sklearn.model_selection import train_test_split
 train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.3, random_state=42)
 
-class TransformerModel1(nn.Module):
-    def __init__(self, input_size, hidden_size, num_classes, num_heads=14, dim_feedforward=2048, num_encoder_layers=6):
-        super(TransformerModel1, self).__init__()
-        self.transformer_encoder = nn.TransformerEncoder(
-            # 384 heads dim
-            nn.TransformerEncoderLayer(d_model=input_size, nhead=num_heads, dim_feedforward=dim_feedforward),
-            num_layers=num_encoder_layers
-        )
-        # 14+9
-        self.fc = nn.Linear(input_size*11, num_classes)
-        self.dropout = nn.Dropout(0.5)
-        self.activation = nn.ReLU()
-
-    def forward(self, x):
-        x = self.transformer_encoder(x)
-        x = x.view(x.size(0), -1)
-        x = self.activation(x)
-        x = self.dropout(x)
-        x = self.fc(x)
-        return x
     
 # 分类模型
-class EEGClassifier(nn.Module):
-    def __init__(self, num_classes=3):
-        super(EEGClassifier, self).__init__()
-        # 加载对比学习模型
-        contrastive_model = temporal_channel_joint_attention()
-        contrastive_model.load_state_dict(torch.load('./contrastive_learning_model.pth'))
+class MultiModalClassifier(nn.Module):
+    def __init__(self, input_size=384, num_classes=3, 
+                 num_heads=16, dim_feedforward=2048, num_encoder_layers=6,
+                 in_c=3, embed_dim=384, patch_size=16,
+                 ):
+        super(MultiModalClassifier, self).__init__()
+        self.proj = nn.Conv2d(in_c, embed_dim, kernel_size=patch_size, stride=patch_size) # [n, 384, 8, 8]
+        self.norm = nn.Identity()
+        self.transformer_encoder = nn.TransformerEncoder(
+            nn.TransformerEncoderLayer(d_model=input_size, nhead=num_heads, dim_feedforward=dim_feedforward, batch_first=True),
+            num_layers=num_encoder_layers
+        )
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, input_size))
 
-        # 冻结对比学习模型的encoder_temproal和encoder_channel部分的参数
-        for param in contrastive_model.encoder_temproal.parameters():
-            param.requires_grad = True
-        for param in contrastive_model.encoder_channel.parameters():
-            param.requires_grad = True
-
-        # 提取encoder_temproal和encoder_channel
-        self.encoder_temproal = contrastive_model.encoder_temproal
-        # self.encoder_channel = contrastive_model.encoder_channel
-
-        self.dropout = nn.Dropout(0.1)
+        self.fc1 = nn.Linear(input_size, 2048)
+        self.fc2 = nn.Linear(2048, num_classes)
+        self.dropout = nn.Dropout(0.2)
         self.activation = nn.ReLU()
-        self.BN = nn.BatchNorm1d(2048)
-        self.fc1 = nn.Linear(num_windows*num_channels*num_FBs, 2048)
-        self.fc2 = nn.Linear(2048, 504)
-        self.fc3 = nn.Linear(504, num_classes)
 
+        
+    def forward(self, eeg_data, image_data):
+        image_embedding = self.proj(image_data).flatten(2).transpose(1, 2)
+        image_embedding = self.norm(image_embedding)
 
-    def forward(self, PSDs):
-        temporal_tokens = PSDs.reshape(-1, num_windows, num_channels*num_FBs)
-        # channel_tokens = PSDs.reshape(-1, num_channels, num_windows*num_FBs)
-        temporal_features = self.encoder_temproal(temporal_tokens)
-        # channel_features = self.encoder_channel(channel_tokens)
-        # # concat 
-        # temporal_features = temporal_features.reshape(-1, 1, num_windows*num_channels*num_FBs)
-        # channel_features = channel_features.reshape(-1, 1, num_channels*num_windows*num_FBs)
-        # joint_features = torch.cat((temporal_features, channel_features), dim=1)
-        # # classification
-        temporal_features = nn.Flatten()(temporal_features)
-        print(temporal_features.shape)
-        joint_features = self.fc1(temporal_features)
-        joint_features = self.BN(joint_features)
-        joint_features = self.activation(joint_features)
-        joint_features = self.dropout(joint_features)
-        joint_features = self.fc2(joint_features)
-        joint_features = self.activation(joint_features)
-        joint_features = self.dropout(joint_features)
-        res = self.fc3(joint_features)
-        # joint_features = self.activation(joint_features)
-        # res = self.dropout(joint_features)
-        return res
+        multi_embedding = torch.cat((eeg_data, image_embedding), dim=1)
+
+        cls_tokens = self.cls_token.expand(multi_embedding.shape[0], -1, -1)
+        multi_embedding = torch.cat((cls_tokens, multi_embedding), dim=1)
+
+        multi_embedding = self.transformer_encoder(multi_embedding)
+
+        # 取出cls token的输出
+        multi_embedding = multi_embedding[:, 0, :]
+        x = self.fc1(multi_embedding)
+        x = self.dropout(x)
+        x = self.activation(x)
+        x = self.fc2(x)
+
+        return x
     
-# 创建分类模型
-classifier = EEGClassifier().to(device)
+classifier = MultiModalClassifier()
+classifier = classifier.to(device) 
 
-# 定义优化器和损失函数
-optimizer = optim.Adam(classifier.parameters())
-criterion = nn.CrossEntropyLoss()
-
-# 定义训练函数
-def train(model, train_loader, optimizer, criterion):
-    model.train()
-    train_loss = 0.0
-    train_acc = 0.0
-    for i, (inputs, labels) in enumerate(train_loader):
-        inputs = inputs.clone().detach().type(torch.float32)
-        labels = labels.clone().detach().type(torch.long)
-        inputs, labels = inputs.to(device), labels.to(device)
-        optimizer.zero_grad()
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        loss.backward()
-        optimizer.step()
-        train_loss += loss.item() * inputs.size(0)
-        _, preds = torch.max(outputs, 1)
-        train_acc += torch.sum(preds == labels.data)
-    train_loss = train_loss / len(train_loader.dataset)
-    train_acc = train_acc.double() / len(train_loader.dataset)
-    return train_loss, train_acc
-
-# 定义测试函数
-def test(model, test_loader, criterion):
-    model.eval()
-    test_loss = 0.0
-    test_acc = 0.0
-    y_true = []
-    y_pred = []
-    for i, (inputs, labels) in enumerate(test_loader):
-        inputs = inputs.clone().detach().type(torch.float32)
-        labels = labels.clone().detach().type(torch.long)
-        inputs, labels = inputs.to(device), labels.to(device)
-        outputs = model(inputs)
-        loss = criterion(outputs, labels)
-        test_loss += loss.item() * inputs.size(0)
-        _, preds = torch.max(outputs, 1)
-        test_acc += torch.sum(preds == labels.data)
-        y_true.extend(labels.data.cpu().numpy())
-        y_pred.extend(preds.cpu().numpy())
-    test_loss = test_loss / len(test_loader.dataset)
-    test_acc = test_acc.double() / len(test_loader.dataset)
-    print(classification_report(y_true, y_pred))
-    return test_loss, test_acc
-
-# 定义EEG数据集类
-class EEGDataset(Dataset):
-    def __init__(self, data, labels):
-        self.data = data
-        self.labels = labels
-    
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, index):
-        eeg = self.data[index]
-        label = self.labels[index]
-        return eeg, label
 
 # 创建Dataset
-train_dataset = EEGDataset(train_data, train_labels)
-test_dataset = EEGDataset(test_data, test_labels)
+train_dataset = MultiModalDataset(train_data, train_labels)
+test_dataset = MultiModalDataset(test_data, test_labels)
 
 # 创建DataLoader
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-# 训练模型
-num_epochs = 100
-for epoch in range(num_epochs):
-    train_loss, train_acc = train(classifier, train_loader, optimizer, criterion)
-    test_loss, test_acc = test(classifier, test_loader, criterion)
-    print("Epoch: {} Train Loss: {:.6f} Train Acc: {:.6f} Test Loss: {:.6f} Test Acc: {:.6f}".format(epoch, train_loss, train_acc, test_loss, test_acc))
-    
-print("Training finished!")
+# 定义损失函数和优化器
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
 
-# 保存模型
-torch.save(classifier.state_dict(), './simCLR_classifier.pth')
+# 训练模型
+num_epochs = 10
+total_step = len(train_loader)
+for epoch in range(num_epochs):
+    correct = 0
+    total = 0
+    for i, (eeg_data, image_data, labels) in enumerate(train_loader):
+        eeg_data = eeg_data.to(device)
+        image_data = image_data.to(device)
+        labels = labels.to(device)
+        
+        # Forward pass
+        outputs = classifier(eeg_data, image_data)
+        loss = criterion(outputs, labels)
+        
+        # 计算准确率
+        _, predicted = torch.max(outputs.data, 1)
+        total += labels.size(0)
+        correct += (predicted == labels).sum().item()
+        
+        # Backward and optimize
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        
+        if (i+1) % 1 == 0:
+            print ('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}' 
+                   .format(epoch+1, num_epochs, i+1, total_step, loss.item()))
+    
+    print('Accuracy of the model on the training data: {} %'.format(100 * correct / total))
