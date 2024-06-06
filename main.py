@@ -66,8 +66,8 @@ data_array = np.concatenate(data_list, axis=0)
 # 将标签列表转换为numpy数组并按顺序连接
 label_array = np.concatenate(label_list, axis=0)
 
-print("Data shape:", data_array.shape) # (399, 384, 14) 14个通道，每个通道384个样本，总共399个试验数量（18人 x 21个/人）
-print("Label shape:", label_array.shape) # (399,) 399个试验数量
+print("Data shape:", data_array.shape) # (378, 384, 14) 14个通道，每个通道384个样本，总共378个试验数量（18人 x 21个/人）
+print("Label shape:", label_array.shape) # (378,) 378个试验数量
 
 # 扩充数据
 ros = RandomOverSampler(sampling_strategy='auto', random_state=42)
@@ -76,16 +76,16 @@ data, labels = ros.fit_resample(data_array, label_array)
 # data, labels = data_array, label_array
 data = data.reshape(-1,384,14)
 data = data.transpose(0,2,1)
-print(data.shape)
-print(labels.shape)
+print(data.shape) # (810, 14, 384)
+print(labels.shape) #(810,)
 # print(labels)
 
 # Check if GPU is available
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-print(len(labels[labels == 0]))
-print(len(labels[labels == 1]))
-print(len(labels[labels == 2]))
+print(len(labels[labels == 0])) # 270
+print(len(labels[labels == 1])) # 270
+print(len(labels[labels == 2])) # 270
 
 eeg_data = data
 
@@ -100,13 +100,14 @@ for i in range(1, 811):
     image_array = np.asarray(image)
     # 将数组添加到image_data中
     image_data[i-1] = image_array.transpose((2, 0, 1))
-print("image_data.shape:", image_data.shape)
+print("image_data.shape:", image_data.shape) # (810, 3, 128, 128)
 
 # 使用zip函数将它们组合在一起
-combined_data = list(zip(eeg_data, image_data))
+combined_data = list(zip(eeg_data, image_data)) # (810, 14, 384)+(810, 3, 128, 128)
 
-# 现在，combined_data是一个长度为399的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个3x128x128的数组
-print(len(combined_data))  # 输出：(399, 2)
+# 现在，combined_data是一个长度为810的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个3x128x128的数组
+print(len(combined_data))  # 输出：810
+print(len(combined_data[0])) # 2
 print(combined_data[0][0].shape)  # 输出：(14, 384)
 print(combined_data[0][1].shape)  # 输出：(3, 128, 128)
 
@@ -126,13 +127,10 @@ class MultiModalDataset(torch.utils.data.Dataset):
         label = self.labels[index]
         return eeg_data, image_data, label
 
-
-
 # 随机划分训练集和测试集
 from sklearn.model_selection import train_test_split
 train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.3, random_state=42)
 
-    
 # 分类模型
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=384, num_classes=3, 
@@ -162,6 +160,7 @@ class MultiModalClassifier(nn.Module):
 
         cls_tokens = self.cls_token.expand(multi_embedding.shape[0], -1, -1)
         multi_embedding = torch.cat((cls_tokens, multi_embedding), dim=1)
+        print('test:', multi_embedding.shape) # torch.Size([32, 79, 384]) batch_size,64+14+1,384
 
         multi_embedding = self.transformer_encoder(multi_embedding)
 
@@ -183,8 +182,8 @@ train_dataset = MultiModalDataset(train_data, train_labels)
 test_dataset = MultiModalDataset(test_data, test_labels)
 
 # 创建DataLoader
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=30, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=30, shuffle=False)
 
 # 定义损失函数和优化器
 criterion = nn.CrossEntropyLoss()
