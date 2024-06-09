@@ -2,3 +2,4 @@ EEGData/
 facesFromFrames_new/
 *.jpg
 *.csv
+*.pth

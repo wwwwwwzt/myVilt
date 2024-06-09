@@ -66,8 +66,8 @@ data_array = np.concatenate(data_list, axis=0)
 # 将标签列表转换为numpy数组并按顺序连接
 label_array = np.concatenate(label_list, axis=0)
 
-print("Data shape:", data_array.shape) # (378, 384, 14) 14个通道，每个通道384个样本，总共378个试验数量（18人 x 21个/人）
-print("Label shape:", label_array.shape) # (378,) 378个试验数量
+print("Data shape before overSampling:", data_array.shape) # (378, 384, 14) 14个通道，每个通道384个样本，总共378个试验数量（18人 x 21个/人）
+print("Label shape before overSampling:", label_array.shape) # (378,) 378个试验数量
 
 # 扩充数据
 ros = RandomOverSampler(sampling_strategy='auto', random_state=42)
@@ -90,26 +90,26 @@ print(len(labels[labels == 2])) # 270
 eeg_data = data
 
 # 创建一个空的numpy数组，用于存放图像数据
-image_data = np.empty((810, 3, 128, 128))
+image_data = np.empty((810, 3, 224, 224))
 # 读取图片并存放到numpy数组中
 for i in range(1, 811):
     filename = f"./facesFromFrames_810/{i}.jpg"
     image = Image.open(filename)
-    image = image.resize((128, 128))
+    image = image.resize((224, 224))
     # 将图像数据转换为数组
     image_array = np.asarray(image)
     # 将数组添加到image_data中
     image_data[i-1] = image_array.transpose((2, 0, 1))
-print("image_data.shape:", image_data.shape) # (810, 3, 128, 128)
+print("image_data.shape:", image_data.shape) # (810, 3, 224, 224)
 
 # 使用zip函数将它们组合在一起
-combined_data = list(zip(eeg_data, image_data)) # (810, 14, 384)+(810, 3, 128, 128)
+combined_data = list(zip(eeg_data, image_data)) # (810, 14, 384)+(810, 3, 224, 224)
 
-# 现在，combined_data是一个长度为810的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个3x128x128的数组
+# 现在，combined_data是一个长度为810的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个3x224x224的数组
 print(len(combined_data))  # 输出：810
 print(len(combined_data[0])) # 2
 print(combined_data[0][0].shape)  # 输出：(14, 384)
-print(combined_data[0][1].shape)  # 输出：(3, 128, 128)
+print(combined_data[0][1].shape)  # 输出：(3, 224, 224)
 
 data = combined_data
 
@@ -125,6 +125,9 @@ class MultiModalDataset(torch.utils.data.Dataset):
         eeg_data = self.data[index][0].astype(np.float32)
         image_data = self.data[index][1].astype(np.float32)
         label = self.labels[index]
+        # print("eeg_data",len(eeg_data)) # 14
+        # print("image_data",len(image_data)) # 3
+        # print("label",label) # 0\1\2
         return eeg_data, image_data, label
 
 # 随机划分训练集和测试集
@@ -133,9 +136,9 @@ train_data, test_data, train_labels, test_labels = train_test_split(data, labels
 
 # 分类模型
 class MultiModalClassifier(nn.Module):
-    def __init__(self, input_size=384, num_classes=3, 
+    def __init__(self, input_size=768, num_classes=3, 
                  num_heads=16, dim_feedforward=2048, num_encoder_layers=6,
-                 in_c=3, embed_dim=384, patch_size=16,
+                 in_c=3, embed_dim=768, patch_size=16, drop_ratio=0.2
                  ):
         super(MultiModalClassifier, self).__init__()
         self.proj = nn.Conv2d(in_c, embed_dim, kernel_size=patch_size, stride=patch_size) # [n, 384, 8, 8]
@@ -150,19 +153,42 @@ class MultiModalClassifier(nn.Module):
         self.fc2 = nn.Linear(2048, num_classes)
         self.dropout = nn.Dropout(0.2)
         self.activation = nn.ReLU()
+        # 在main768中加入 Upsample，让长度从 3x128=384 增长到768，以便使用vit的权重
+        self.projEEG = nn.Upsample(768, mode='linear', align_corners=False)
 
+        self.pos_drop = nn.Dropout(p=drop_ratio)
+        # position embedding [1,196+14+1,768]的全0矩阵
+        self.pos_embed = nn.Parameter(torch.zeros(1, 211, 768))
+        # Weight init
+        nn.init.trunc_normal_(self.pos_embed, std=0.02)
+        nn.init.trunc_normal_(self.cls_token, std=0.02)
+        self.apply(_init_vit_weights)
         
     def forward(self, eeg_data, image_data):
+        '''
+            eeg_data            # torch.Size([30, 14, 384]) 
+            eeg_embedding       # torch.Size([30, 14, 768])
+            image_data          # torch.Size([30, 3, 224, 224])
+            image_embedding     # torch.Size([30, 196, 768])
+            multi_embedding     # torch.Size([30, 211, 768]) batch_size,196+14+1,768
+        '''
         image_embedding = self.proj(image_data).flatten(2).transpose(1, 2)
         image_embedding = self.norm(image_embedding)
 
-        multi_embedding = torch.cat((eeg_data, image_embedding), dim=1)
+        eeg_embedding = self.projEEG(eeg_data)
+        eeg_embedding = self.norm(eeg_embedding) 
+
+
+        multi_embedding = torch.cat((eeg_embedding, image_embedding), dim=1)
 
         cls_tokens = self.cls_token.expand(multi_embedding.shape[0], -1, -1)
         multi_embedding = torch.cat((cls_tokens, multi_embedding), dim=1)
-        print('test:', multi_embedding.shape) # torch.Size([32, 79, 384]) batch_size,64+14+1,384
+
+        # position embedding
+        multi_embedding = self.pos_drop(multi_embedding + self.pos_embed)
 
         multi_embedding = self.transformer_encoder(multi_embedding)
+
 
         # 取出cls token的输出
         multi_embedding = multi_embedding[:, 0, :]
@@ -173,19 +199,36 @@ class MultiModalClassifier(nn.Module):
 
         return x
     
+def _init_vit_weights(m):
+    """
+    ViT weight initialization
+    :param m: module
+    """
+    if isinstance(m, nn.Linear):
+        nn.init.trunc_normal_(m.weight, std=.01)
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+    elif isinstance(m, nn.Conv2d):
+        nn.init.kaiming_normal_(m.weight, mode="fan_out")
+        if m.bias is not None:
+            nn.init.zeros_(m.bias)
+    elif isinstance(m, nn.LayerNorm):
+        nn.init.zeros_(m.bias)
+        nn.init.ones_(m.weight)
+    
 classifier = MultiModalClassifier()
 classifier = classifier.to(device) 
 
-# weights = './weights/vit_base_patch16_224.pth'
-# if weights != "":
-#     assert os.path.exists(weights), "weights file: '{}' not exist.".format(weights)
-#     weights_dict = torch.load(weights, map_location=device)
-#     # 删除不需要的权重
-#     del_keys = ['head.weight', 'head.bias'] if True \
-#         else ['head.weight', 'head.bias']  
-#     for k in del_keys:
-#         del weights_dict[k]
-#     print(classifier.load_state_dict(weights_dict, strict=False))
+weights = './weights/vit_base_patch16_224.pth'
+if weights != "":
+    assert os.path.exists(weights), "weights file: '{}' not exist.".format(weights)
+    weights_dict = torch.load(weights, map_location=device)
+    # 删除不需要的权重
+    del_keys = ['head.weight', 'head.bias'] 
+    for k in del_keys:
+        del weights_dict[k]
+    # print(classifier.load_state_dict(weights_dict, strict=False))
+    classifier.load_state_dict(weights_dict, strict=False)
 
 # 创建Dataset
 train_dataset = MultiModalDataset(train_data, train_labels)
