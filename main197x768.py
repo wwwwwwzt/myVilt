@@ -160,7 +160,7 @@ class MultiModalClassifier(nn.Module):
 
         self.pos_drop = nn.Dropout(p=drop_ratio)
         # position embedding [1,196+14+1,768]的全0矩阵
-        self.pos_embed = nn.Parameter(torch.zeros(1, 211, 768))
+        self.pos_embed = nn.Parameter(torch.zeros(1, 197, 768))
         # Weight init
         nn.init.trunc_normal_(self.pos_embed, std=0.02)
         nn.init.trunc_normal_(self.cls_token, std=0.02)
@@ -174,14 +174,13 @@ class MultiModalClassifier(nn.Module):
             image_embedding     # torch.Size([30, 196, 768])
             multi_embedding     # torch.Size([30, 211, 768]) batch_size,196+14+1,768
         '''
-        image_embedding = self.proj(image_data).flatten(2).transpose(1, 2)
-        # image_embedding = self.proj(image_data).adaptive_pool().flatten(2).transpose(1, 2)
-
+        # image_embedding = self.proj(image_data).flatten(2).transpose(1, 2)
+        image_embedding = self.proj(image_data)
+        image_embedding = self.adaptive_pool(image_embedding).flatten(2).transpose(1, 2)
         image_embedding = self.norm(image_embedding)
 
         eeg_embedding = self.projEEG(eeg_data)
         eeg_embedding = self.norm(eeg_embedding) 
-
 
         multi_embedding = torch.cat((eeg_embedding, image_embedding), dim=1)
 
@@ -247,7 +246,7 @@ criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(classifier.parameters(), lr=0.001)
 
 # 训练模型
-num_epochs = 10
+num_epochs = 100
 total_step = len(train_loader)
 for epoch in range(num_epochs):
     correct = 0
@@ -271,7 +270,7 @@ for epoch in range(num_epochs):
         loss.backward()
         optimizer.step()
         
-        if (i+1) % 1 == 0:
+        if (i+1) % 10 == 0:
             print ('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}' 
                    .format(epoch+1, num_epochs, i+1, total_step, loss.item()))
     

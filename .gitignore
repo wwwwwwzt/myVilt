@@ -1,5 +1,6 @@
 EEGData/
 facesFromFrames_new/
+weights/
 *.jpg
 *.csv
 *.pth
