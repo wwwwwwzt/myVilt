@@ -15,23 +15,22 @@ from transformers import AutoImageProcessor, AutoModel
 from tqdm import tqdm
 from torchvision import transforms
 
+# vit模块来源：https://huggingface.co/google/vit-base-patch16-224/tree/main
 processor = AutoImageProcessor.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
 vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
-
 
 # 设置通道数和样本数
 channels = 14
 samples = 384
-# 存放数据的文件夹路径
-data_folder = './EEGData/'
+eeg_data_folder = './EEGData/'
 # 存储所有数据的列表和标签列表
 data_list = []
 label_list = []
 
 # 遍历文件夹中的所有CSV文件
-for file_name in os.listdir(data_folder):
+for file_name in os.listdir(eeg_data_folder):
     if file_name.endswith(".csv"):
-        file_path = os.path.join(data_folder, file_name)
+        file_path = os.path.join(eeg_data_folder, file_name)
         
         # 使用pandas读取CSV文件，只读取2-15列的数据
         df = pd.read_csv(file_path, usecols=list(range(1, 15)), header=0)
