@@ -14,15 +14,31 @@ import torch.nn as nn
 from transformers import AutoImageProcessor, AutoModel
 from tqdm import tqdm
 from torchvision import transforms
+from sklearn.model_selection import KFold
 
 # vit模块来源：https://huggingface.co/google/vit-base-patch16-224/tree/main
 processor = AutoImageProcessor.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
 vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
 
-# 设置通道数和样本数
-channels = 14
-samples = 384
+'''
+    -----------------------------数据初始化--------------------------------
+'''
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './EEGData/'
+image_data_folder = "./facesFromFrames810/"
+# eeg为14个通道
+channels = 14
+# 3s x 128Hz = 384
+samples = 384
+# 是否使用扩充数据
+use_oversampling = True
+'''
+    -----------------------------组织EEG数据和label--------------------------------
+    1. 得到eeg数据的numpy数组 (trails,samples,channels)  (378, 384, 14)
+    2. 得到label的numpy数组 (trails,)  (378,)
+    3. 扩充eeg数据  (810, 14, 384)
+    4. 扩充后label的数量为270+270+270=810  (810,)
+'''
 # 存储所有数据的列表和标签列表
 data_list = []
 label_list = []
@@ -53,7 +69,7 @@ for file_name in os.listdir(eeg_data_folder):
         data = raw.get_data().T
 
         # 将数据调整为每个trial的形状
-        # 假设数据的样本数为samples
+        # 假设数据的样本数为samples 
         num_trials = data.shape[0] // samples
         data = data[:num_trials * samples, :]
         # 重新将数据分成每个trial的形状
@@ -74,42 +90,43 @@ label_array = np.concatenate(label_list, axis=0)
 print("Data shape before overSampling:", data_array.shape) # (378, 384, 14) 14个通道，每个通道384个样本，总共378个试验数量（18人 x 21个/人）
 print("Label shape before overSampling:", label_array.shape) # (378,) 378个试验数量
 
-# 扩充数据
-ros = RandomOverSampler(sampling_strategy='auto', random_state=42)
-data_array = data_array.reshape(-1, 384*14)
-data, labels = ros.fit_resample(data_array, label_array)
-# data, labels = data_array, label_array
-data = data.reshape(-1,384,14)
-data = data.transpose(0,2,1)
-print(data.shape) # (810, 14, 384)
-print(labels.shape) #(810,)
+if use_oversampling:
+    # 扩充数据
+    ros = RandomOverSampler(sampling_strategy='auto', random_state=42)
+    data_array = data_array.reshape(-1, 384 * channels)
+    data, labels = ros.fit_resample(data_array, label_array)
+else:
+    data = data_array
+    labels = label_array
+
+data = data.reshape(-1, 384, channels)
+data = data.transpose(0, 2, 1)
+# print(data.shape) # (810, 14, 384)
+# print(labels.shape) # (810,)
 # print(labels)
-
-# Check if GPU is available
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-print(len(labels[labels == 0])) # 270
-print(len(labels[labels == 1])) # 270
-print(len(labels[labels == 2])) # 270
-
+# print(len(labels[labels == 0])) # 270 
+# print(len(labels[labels == 1])) # 270
+# print(len(labels[labels == 2])) # 270
 eeg_data = data
+'''
+    -----------------------------组织图像数据,与eeg对齐--------------------------------
+    1. 得到图像数据的numpy数组 (810, 3, 224, 224)
+'''
+# 创建一个列表，用于存储所有图像文件的路径
+image_file_list = []
+for i in range(1, 811):
+    filename = f"{image_data_folder}{i}.jpg"
+    image_file_list.append(filename)
+print("image_file_list:", len(image_file_list)) # 810
+
+# eeg、图片组合在一起
+combined_data = list(zip(eeg_data, image_file_list)) # (810, 14, 384) + (810)
+# 现在，combined_data是一个长度为810的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个810的数组
+data = combined_data
 
 # 创建一个空的numpy数组，用于存放图像数据
+# todo 解决这个麻烦的瞎起名字的image_data
 image_data = np.empty((810, 3, 224, 224))
-image_file_list = []
-# 读取图片并存放到numpy数组中
-for i in range(1, 811):
-    filename = f"./facesFromFrames_810/{i}.jpg"
-    image_file_list.append(filename)
-# print("image_data.shape:", image_data.shape) # (810, 3, 224, 224)
-
-# 使用zip函数将它们组合在一起
-combined_data = list(zip(eeg_data, image_file_list)) # (810, 14, 384)+(810, 3, 224, 224)
-
-# 现在，combined_data是一个长度为810的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个3x224x224的数组
-# print(len(combined_data))  # 输出：810
-
-data = combined_data
 
 class MultiModalDataset(torch.utils.data.Dataset):
     def __init__(self, data, labels):
@@ -208,7 +225,6 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
 
-from sklearn.model_selection import KFold
 
 # 创建一个KFold对象
 kf = KFold(n_splits=5, shuffle=True, random_state=42)
