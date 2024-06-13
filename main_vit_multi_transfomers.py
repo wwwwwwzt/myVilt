@@ -92,7 +92,7 @@ print("Label shape before overSampling:", label_array.shape) # (378,) 378个试�
 
 if use_oversampling:
     # 扩充数据
-    ros = RandomOverSampler(sampling_strategy='auto', random_state=42)
+    ros = RandomOverSampler(sampling_strategy='auto', random_state=30)
     data_array = data_array.reshape(-1, 384 * channels)
     data, labels = ros.fit_resample(data_array, label_array)
 else:
@@ -104,9 +104,9 @@ data = data.transpose(0, 2, 1)
 # print(data.shape) # (810, 14, 384)
 # print(labels.shape) # (810,)
 # print(labels)
-# print(len(labels[labels == 0])) # 270 
-# print(len(labels[labels == 1])) # 270
-# print(len(labels[labels == 2])) # 270
+# print(len(labels[labels == 0])) # 270 M 
+# print(len(labels[labels == 1])) # 270 N
+# print(len(labels[labels == 2])) # 270 A
 eeg_data = data
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
@@ -146,8 +146,8 @@ class MultiModalDataset(torch.utils.data.Dataset):
         return eeg_data, image_data, label
 
 # 随机划分训练集和测试集
-from sklearn.model_selection import train_test_split
-train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.2, random_state=42)
+# from sklearn.model_selection import train_test_split
+# train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.2, random_state=40)
 
 # 分类模型
 class MultiModalClassifier(nn.Module):
@@ -213,13 +213,13 @@ class MultiModalClassifier(nn.Module):
 
 model = MultiModalClassifier().to(device) 
 
-# 创建Dataset
-train_dataset = MultiModalDataset(train_data, train_labels)
-test_dataset = MultiModalDataset(test_data, test_labels)
+# # 创建Dataset
+# train_dataset = MultiModalDataset(train_data, train_labels)
+# test_dataset = MultiModalDataset(test_data, test_labels)
 
-# 创建DataLoader
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+# # 创建DataLoader
+# train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+# test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 # 定义损失函数和优化器
 criterion = nn.CrossEntropyLoss()
@@ -227,7 +227,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
 
 
 # 创建一个KFold对象
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
+kf = KFold(n_splits=5, shuffle=True, random_state=30)
 
 epochs = 10
 # 用于存储每次迭代的准确率
