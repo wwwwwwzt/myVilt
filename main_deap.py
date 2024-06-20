@@ -1,12 +1,6 @@
 import os
 import pandas as pd
 import numpy as np
-import mne
-from mne import io
-from mne.datasets import sample
-from mne.preprocessing import ICA
-from matplotlib import pyplot as plt
-from imblearn.over_sampling import RandomOverSampler
 import torch
 from PIL import Image
 from torch.utils.data import DataLoader
@@ -15,15 +9,16 @@ from transformers import AutoImageProcessor, AutoModel
 from tqdm import tqdm
 from torchvision import transforms
 from sklearn.model_selection import KFold
-
+from torch.utils.tensorboard import SummaryWriter
+import time
 '''
     -----------------------------数据初始化--------------------------------
 '''
 # vit模块来源：https://huggingface.co/google/vit-base-patch16-224/tree/main
 processor = AutoImageProcessor.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
 vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 eeg_data_folder = './DEAP/EEGData/'
 image_data_folder = "./DEAP/faces/"
 channels = 32
@@ -31,7 +26,6 @@ channels = 32
 samples = 384
 eeg_data = np.load(f"{eeg_data_folder}s01_eeg.npy")
 labels = np.load(f"{eeg_data_folder}s01_labels.npy")
-image_data = np.empty((800, 3, 224, 224))
 
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
@@ -127,22 +121,24 @@ class MultiModalClassifier(nn.Module):
         return x
     
 
-model = MultiModalClassifier().to(device) 
-
-# 定义损失函数和优化器
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
-
-# 创建一个KFold对象
+# 5折交叉验证
+# 训练集 800x1/4 = 640，测试集800x1/5 = 160
 kf = KFold(n_splits=5, shuffle=True, random_state=30)
 
-epochs = 10
+epochs = 20
 # 用于存储每次迭代的准确率
 accuracies = []
 
+start_time = time.time()
 # 开始交叉验证
 for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, desc="Cross Validation"):
     print(f"Fold {fold + 1}")
+
+    model = MultiModalClassifier().to(device) 
+
+    # 定义损失函数和优化器
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
 
     # 分割数据
     train_data = [data[i] for i in train_index]
@@ -153,7 +149,6 @@ for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, 
     print(len(labels))  # 800
     assert max(test_index) < len(labels), "Index out of range"
     test_labels = labels[test_index]
-    # test_labels = labels[test_index]
 
     # 创建数据集
     train_dataset = MultiModalDataset(train_data, train_labels)
@@ -163,11 +158,13 @@ for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
+    writer = SummaryWriter(f'runs/experiment_{fold + 1}')
+    
     # 训练和验证模型
     for epoch in range(epochs):  # 假设我们训练10个epoch
         # 训练阶段
         model.train()
-        for eeg_data, image_data, label in tqdm(train_loader,total=len(train_loader),desc="Training"):
+        for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
             # 将数据移动到设备上
             eeg_data = eeg_data.to(device)
             image_data = image_data.to(device)
@@ -187,26 +184,38 @@ for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, 
             loss.backward()
             optimizer.step()
 
+            if i % 10 == 0:  # 每10个批次，记录损失和准确率
+                _, predicted = torch.max(output, 1)
+                correct = (predicted == label).sum().item()
+                acc = correct / label.size(0)
+                writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i)  # loss 800
+                writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  # acc 800
+
             print(f"Epoch: {epoch + 1}, Loss: {loss.item()}")
 
-    # 在验证集上评估模型
-    model.eval()
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for eeg_data, image_data, label in tqdm(test_loader, total=len(test_loader), desc="Testing"):
-            eeg_data, image_data, label = eeg_data.to(device), image_data.to(device), label.to(device)
-            # eeg_data, image_data, labels = torch.from_numpy(eeg_data).to(device), torch.from_numpy(image_data).to(device), torch.from_numpy(label).to(device)
-            outputs = model(eeg_data, image_data)
-            _, predicted = torch.max(outputs.data, 1)
-            total += label.size(0)
-            correct += (predicted == label).sum().item()
+        # 在验证集上评估模型
+        model.eval()
+        test_correct = 0
+        test_total = 0
+        with torch.no_grad():
+            for eeg_data, image_data, label in test_loader:
+                eeg_data, image_data, label = eeg_data.to(device), image_data.to(device), label.to(device)
+                outputs = model(eeg_data, image_data)
+                _, predicted = torch.max(outputs.data, 1)
+                test_total += label.size(0)
+                test_correct += (predicted == label).sum().item()
 
-    # 计算准确率并添加到列表中
-    accuracy = correct / total
-    print(f"Accuracy: {accuracy}")
-    accuracies.append(accuracy)
+            acc = test_correct / test_total
+            writer.add_scalar('test accuracy', acc, epoch + 1) # 从0-9变成1-10
+            print("test accuracy", acc)
+
+    writer.close()
+    accuracies.append(acc)
 
 # 打印所有的准确率以及最大的准确率
 print('Accuracies:', accuracies)
-print('Max accuracy:', max(accuracies))
+print('Average accuracy:', sum(accuracies) / len(accuracies))
+
+end_time = time.time()
+run_time_min = round((end_time - start_time) / 60)
+print(f"Total runtime: {run_time_min} minutes")
