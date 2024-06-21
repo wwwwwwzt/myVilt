@@ -1,4 +1,5 @@
 import os
+import math
 import pandas as pd
 import numpy as np
 import torch
@@ -8,17 +9,18 @@ import torch.nn as nn
 from transformers import AutoImageProcessor, AutoModel
 from tqdm import tqdm
 from torchvision import transforms
-from sklearn.model_selection import KFold
 from torch.utils.tensorboard import SummaryWriter
 import time
+from sklearn.model_selection import train_test_split
+import torch.optim.lr_scheduler as lr_scheduler
 '''
     -----------------------------数据初始化--------------------------------
 '''
 # vit模块来源：https://huggingface.co/google/vit-base-patch16-224/tree/main
 processor = AutoImageProcessor.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
 vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
 image_data_folder = "./DEAP/faces/"
 channels = 32
@@ -122,101 +124,103 @@ class MultiModalClassifier(nn.Module):
 
         return x
     
+# 一次划分
+# train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30)
+train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30, stratify=labels)
 
-# 5折交叉验证
-# 训练集 800x1/4 = 640，测试集800x1/5 = 160
-kf = KFold(n_splits=5, shuffle=True, random_state=24)
-
-epochs = 10
-# 用于存储每次迭代的准确率
-accuracies = []
-
+epochs = 100
 start_time = time.time()
-# 开始交叉验证
-for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, desc="Cross Validation"):
-    print(f"Fold {fold + 1}")
 
-    model = MultiModalClassifier().to(device) 
-    # 定义损失函数和优化器
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
+model = MultiModalClassifier().to(device) 
 
-    # 分割数据
-    train_data = [data[i] for i in train_index] # [218 87 160 175]  [209 99 151 181]    [203 97 169 171]    [210 98 160 172]    [200 99 160 181]
-    test_data = [data[i] for i in test_index]   # [42 33 40 45]     [51 21 49 39]       [57 23 31 49]       [50 22 40 48]       [60 21 40 39]
+lr = 0.0001
+lrf= 0.01
 
-    train_labels, test_labels = labels[train_index], labels[test_index]
-    train_label_counts = np.bincount(train_labels)
-    test_label_counts = np.bincount(test_labels)
-    print('Train label counts:', train_label_counts)
-    print('Test label counts:', test_label_counts)
+# 定义损失函数和优化器
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+lf = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf) + lrf  # cosine
+scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 
-    # 创建数据集
-    train_dataset = MultiModalDataset(train_data, train_labels)
-    test_dataset = MultiModalDataset(test_data, test_labels)
+# scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
 
-    # 创建数据加载器
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+# 分割数据
+train_data = [data[i] for i in train_index]
+test_data = [data[i] for i in test_index]
+train_labels = labels[train_index]
+test_labels = labels[test_index]
 
-    writer = SummaryWriter(f'runs/experiment_{fold + 1}')
-    
-    # 训练和验证模型
-    for epoch in range(epochs):  # 假设我们训练10个epoch
-        # 训练阶段
-        model.train()
-        for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
-            # 将数据移动到设备上
-            eeg_data = eeg_data.to(device)
-            image_data = image_data.to(device)
-            label = label.to(device)
+# 计算并打印每个类别的数量
+unique_train, counts_train = np.unique(train_labels, return_counts=True)
+unique_test, counts_test = np.unique(test_labels, return_counts=True)
+print("训练集中每个类别的数量：", dict(zip(unique_train, counts_train))) # {0: 208, 1: 96, 2: 160, 3: 176} 80%
+print("测试集中每个类别的数量：", dict(zip(unique_test, counts_test)))   # {0: 52, 1: 24, 2: 40, 3: 44} 20%
 
-            # 前向传播
-            output = model(eeg_data, image_data)
+# 创建数据集
+train_dataset = MultiModalDataset(train_data, train_labels)
+test_dataset = MultiModalDataset(test_data, test_labels)
 
-            # print("output:", output.shape) # torch.Size([32, 4]) 
-            # print("output:", label.shape) # torch.Size([32])
+# 创建数据加载器
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-            # 计算损失
-            loss = nn.CrossEntropyLoss()(output, label)
+writer = SummaryWriter(f'runs/experiment_onceSplit')
 
-            # 反向传播和优化
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+# 训练和验证模型
+for epoch in range(epochs):  # 假设我们训练10个epoch
+    # 训练阶段
+    model.train()
+    for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
+        # 将数据移动到设备上
+        eeg_data = eeg_data.to(device)
+        image_data = image_data.to(device)
+        label = label.to(device)
 
-            if i % 10 == 0:  # 每10个批次，记录损失和准确率
-                _, predicted = torch.max(output, 1)
-                correct = (predicted == label).sum().item()
-                acc = correct / label.size(0)
-                writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i)  # loss 800
-                writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  # acc 800
+        # 前向传播
+        output = model(eeg_data, image_data)
+        # 计算损失
+        loss = nn.CrossEntropyLoss()(output, label)
 
-            print(f"Epoch: {epoch + 1}, Loss: {loss.item()}")
+        # 反向传播和优化
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-        # 在验证集上评估模型
-        model.eval()
-        test_correct = 0
-        test_total = 0
-        with torch.no_grad():
-            for eeg_data, image_data, label in test_loader:
-                eeg_data, image_data, label = eeg_data.to(device), image_data.to(device), label.to(device)
-                outputs = model(eeg_data, image_data)
-                _, predicted = torch.max(outputs.data, 1)
-                test_total += label.size(0)
-                test_correct += (predicted == label).sum().item()
+        if i % 10 == 0:  # 每10个批次，记录损失和准确率
+            _, predicted = torch.max(output, 1)
+            correct = (predicted == label).sum().item()
+            acc = correct / label.size(0)
+            writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i)  # loss 800
+            writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  # acc 800
 
-            acc = test_correct / test_total
-            writer.add_scalar('test accuracy', acc, epoch + 1) # 从0-9变成1-10
-            print("test accuracy", acc)
+        print(f"Epoch: {epoch + 1}, Loss: {loss.item()}")
 
-    writer.close()
-    accuracies.append(acc)
+    # 在验证集上评估模型
+    model.eval()
+    test_correct = 0
+    test_total = 0
+    test_loss = 0
+    with torch.no_grad():
+        for i, (eeg_data, image_data, label) in enumerate(test_loader):
+            eeg_data, image_data, label = eeg_data.to(device), image_data.to(device), label.to(device)
+            outputs = model(eeg_data, image_data)
+            _, predicted = torch.max(outputs.data, 1)
+            test_total += label.size(0)
+            test_correct += (predicted == label).sum().item()
 
-# 打印所有的准确率以及最大的准确率
-print('Accuracies:', accuracies)
-print('Average accuracy:', sum(accuracies) / len(accuracies))
+            # 计算测试集的损失
+            loss = nn.CrossEntropyLoss()(outputs, label)
+            test_loss += loss.item()
 
+        acc = test_correct / test_total
+        writer.add_scalar('test accuracy', acc, epoch + 1) # 从0-9变成1-10
+        writer.add_scalar('test loss', test_loss / len(test_loader), epoch + 1)
+        print(f"Accuracy: {acc}")
+    # 更新学习率 
+    scheduler.step()
+    writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"], epoch)
+
+writer.close()
 end_time = time.time()
 run_time_min = round((end_time - start_time) / 60)
 print(f"Total runtime: {run_time_min} minutes")

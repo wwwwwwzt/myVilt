@@ -4,6 +4,7 @@ weights/
 *.jpg
 *.csv
 *.pth
+*.avi
 data_preprocessed_python/
 data_preprocessed_matlab/
 .DS_Store
