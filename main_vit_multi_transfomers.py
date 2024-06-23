@@ -1,3 +1,6 @@
+'''
+    -----------------------------BJUT数据集--------------------------------
+'''
 import os
 import pandas as pd
 import numpy as np
@@ -19,7 +22,6 @@ from sklearn.model_selection import KFold
 # vit模块来源：https://huggingface.co/google/vit-base-patch16-224/tree/main
 processor = AutoImageProcessor.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
 vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
-
 '''
     -----------------------------数据初始化--------------------------------
 '''

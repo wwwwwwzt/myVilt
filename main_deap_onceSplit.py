@@ -22,12 +22,12 @@ vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/"
+image_data_folder = "./DEAP/faces/s02/"
 channels = 32
 # 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s01_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s01_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s02_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s02_labels.npy")
 label_counts = np.bincount(labels)
 print(label_counts) # [260 120 200 220]
 
@@ -133,16 +133,16 @@ start_time = time.time()
 
 model = MultiModalClassifier().to(device) 
 
-lr = 0.0001
+lr = 0.00001
 lrf= 0.01
+max_lr = 0.00001
 
 # 定义损失函数和优化器
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+# ViT学习率
 lf = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf) + lrf  # cosine
-scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-
-# scheduler = get_linear_schedule_with_warmup(optimizer, num_warmup_steps=warmup_steps, num_training_steps=total_steps)
+# scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 
 # 分割数据
 train_data = [data[i] for i in train_index]
@@ -164,6 +164,8 @@ test_dataset = MultiModalDataset(test_data, test_labels)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
+scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
+print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
 writer = SummaryWriter(f'runs/experiment_onceSplit')
 
 # 训练和验证模型
@@ -185,6 +187,9 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+
+        # 更新warm-up学习率 
+        scheduler.step()
 
         if i % 10 == 0:  # 每10个批次，记录损失和准确率
             _, predicted = torch.max(output, 1)
@@ -216,8 +221,8 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
         writer.add_scalar('test accuracy', acc, epoch + 1) # 从0-9变成1-10
         writer.add_scalar('test loss', test_loss / len(test_loader), epoch + 1)
         print(f"Accuracy: {acc}")
-    # 更新学习率 
-    scheduler.step()
+    # 更新ViT的学习率 
+    # scheduler.step()
     writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"], epoch)
 
 writer.close()
