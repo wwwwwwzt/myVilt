@@ -26,8 +26,8 @@ vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16
     -----------------------------数据初始化--------------------------------
 '''
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-eeg_data_folder = './EEGData/'
-image_data_folder = "./facesFromFrames810/"
+eeg_data_folder = './BJUT/EEGData/'
+image_data_folder = "./BJUT/facesFromFrames810/"
 # eeg为14个通道
 channels = 14
 # 3s x 128Hz = 384
