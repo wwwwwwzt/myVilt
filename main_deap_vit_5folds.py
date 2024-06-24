@@ -173,13 +173,8 @@ for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, 
 
             # 前向传播
             output = model(eeg_data, image_data)
-
-            # print("output:", output.shape) # torch.Size([32, 4]) 
-            # print("output:", label.shape) # torch.Size([32])
-
             # 计算损失
             loss = nn.CrossEntropyLoss()(output, label)
-
             # 反向传播和优化
             optimizer.zero_grad()
             loss.backward()
