@@ -159,7 +159,7 @@ for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, 
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
     test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-    writer = SummaryWriter(f'runs/experiment_{fold + 1}')
+    writer = SummaryWriter(f'runs/deap_{fold + 1}')
     
     # 训练和验证模型
     for epoch in range(epochs):  # 假设我们训练10个epoch

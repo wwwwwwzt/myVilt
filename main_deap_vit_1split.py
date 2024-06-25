@@ -166,7 +166,7 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
-writer = SummaryWriter(f'runs/experiment_onceSplit')
+writer = SummaryWriter(f'runs/deap_onceSplit')
 
 # 训练和验证模型
 for epoch in range(epochs):  # 假设我们训练10个epoch

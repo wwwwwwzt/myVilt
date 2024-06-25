@@ -14,16 +14,21 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 import torch.nn as nn
-from transformers import AutoImageProcessor, AutoModel
+from transformers import AutoImageProcessor,SwinModel,AutoModelForImageClassification
 from tqdm import tqdm
 from torchvision import transforms
-from sklearn.model_selection import KFold
 from torch.utils.tensorboard import SummaryWriter
 import time
+import math
+import torch.optim.lr_scheduler as lr_scheduler
+from sklearn.model_selection import train_test_split
 
-# vit模块来源：https://huggingface.co/google/vit-base-patch16-224/tree/main
-processor = AutoImageProcessor.from_pretrained("./weights/vit-base-patch16-224")
-vitmodel = AutoModel.from_pretrained("./weights/vit-base-patch16-224")
+# print(dir(transforms))
+# exit()
+# swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
+swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+
 '''
     -----------------------------数据初始化--------------------------------
 '''
@@ -145,6 +150,9 @@ class MultiModalDataset(torch.utils.data.Dataset):
         label = self.labels[index]
         return eeg_data, image_data, label
 
+# 随机划分训练集和测试集
+train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.2, random_state=40)
+
 # 分类模型
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=3, 
@@ -153,9 +161,9 @@ class MultiModalClassifier(nn.Module):
                  eeg_size=384
                  ):
         super(MultiModalClassifier, self).__init__()
-        self.img_processor = processor
-        self.vit_model = vitmodel
-        for param in self.vit_model.parameters():
+        self.img_processor = swin_processor
+        self.swin_model = swin_model
+        for param in self.swin_model.parameters():
             param.requires_grad = True
 
         self.token_type_embeddings = nn.Embedding(2, input_size)
@@ -176,15 +184,19 @@ class MultiModalClassifier(nn.Module):
         
     def forward(self, eeg_data, image_data):
         '''
-            eeg_data            # torch.Size([30, 14, 384]) 
-            eeg_embedding       # torch.Size([30, 14, 768])
-            image_data          # torch.Size([30, 3, 224, 224])
-            image_embedding     # torch.Size([30, 196, 768])
-            multi_embedding     # torch.Size([30, 211, 768]) batch_size,196+14+1,768
+            batch_size          # 32
+            eeg_data            # torch.Size([32, 14, 384]) 
+            eeg_embedding       # torch.Size([32, 14, 768])
+            image_data          # torch.Size([32, 224, 224, 3])
+            image_embedding     # 
+            multi_embedding     # 
         '''
-        image_data = self.img_processor(image_data, return_tensors="pt").to(device)
-        image_embedding = self.vit_model(**image_data).last_hidden_state[:,1:,:]
-
+        image_data = self.img_processor(images=image_data, return_tensors="pt").to(device)
+        
+        with torch.no_grad():
+            image_embedding = self.swin_model(**image_data)
+        image_embedding = image_embedding.last_hidden_state  # torch.Size([32, 49, 768])
+    
         eeg_data = self.layernorm(eeg_data)
         eeg_embedding = self.eeg_proj(eeg_data)
         eeg_embedding = self.activation(eeg_embedding)
@@ -206,90 +218,75 @@ class MultiModalClassifier(nn.Module):
 
         return x
     
-# 创建一个KFold对象
-kf = KFold(n_splits=5, shuffle=True, random_state=30)
+model = MultiModalClassifier().to(device) 
 
-epochs = 10
-accuracies = []
+# 创建Dataset
+train_dataset = MultiModalDataset(train_data, train_labels)
+test_dataset = MultiModalDataset(test_data, test_labels)
+# 创建DataLoader
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+
+epochs = 500
+lr = 0.0001
+lrf= 0.01
+lf = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf) + lrf  # cosine
+# 定义损失函数和优化器
+criterion = nn.CrossEntropyLoss()
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
+
+
 start_time = time.time()
-# 开始交叉验证
-for fold, (train_index, test_index) in tqdm(enumerate(kf.split(data)), total=5, desc="Cross Validation"):
-    print(f"Fold {fold + 1}")
+writer = SummaryWriter(f'runs/bjut_swin_onceSplit')
+for epoch in range(epochs):  # 假设我们训练10个epoch
+    model.train()
+    for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
+        # 将数据移动到设备上
+        eeg_data = eeg_data.to(device)
+        image_data = image_data.to(device)
+        label = label.to(device)
 
-    model = MultiModalClassifier().to(device) 
-    criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=0.0001)
+        # 前向传播
+        output = model(eeg_data, image_data)
+        # 计算损失
+        loss = nn.CrossEntropyLoss()(output, label)
+        # 反向传播和优化
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-    # 分割数据
-    train_data = [data[i] for i in train_index]
-    test_data = [data[i] for i in test_index]
-    train_labels = labels[train_index]
+        _, predicted = torch.max(output, 1)
+        correct = (predicted == label).sum().item()
+        acc = correct / label.size(0)
+        writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i) 
+        writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  
 
-    print(max(test_index))
-    print(len(labels))
-    assert max(test_index) < len(labels), "Index out of range"
-    test_labels = labels[test_index]
-    # test_labels = labels[test_index]
+        print(f"Epoch: {epoch + 1}, Loss: {loss.item()}")
+    # 在验证集上评估模型
+    model.eval()
+    val_correct = 0
+    val_total = 0
+    val_loss = 0
+    with torch.no_grad():
+        for eeg_data, image_data, label in tqdm(test_loader, total=len(test_loader), desc="Testing"):
+            eeg_data, image_data, label = eeg_data.to(device), image_data.to(device), label.to(device)
+            outputs = model(eeg_data, image_data)
+            _, predicted = torch.max(outputs.data, 1)
+            val_total += label.size(0)
+            val_correct += (predicted == label).sum().item()
 
-    # 创建数据集、数据加载器
-    train_dataset = MultiModalDataset(train_data, train_labels)
-    test_dataset = MultiModalDataset(test_data, test_labels)
-    train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+            loss = nn.CrossEntropyLoss()(outputs, label)
+            val_loss += loss.item()
 
-    writer = SummaryWriter(f'runs/bjut_{fold + 1}')
-    for epoch in range(epochs):
-        model.train()
-        for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
-            # 将数据移动到设备上
-            eeg_data = eeg_data.to(device)
-            image_data = image_data.to(device)
-            label = label.to(device)
+        acc = val_correct / val_total
+        writer.add_scalar('test accuracy', acc, epoch + 1) # 从0-9变成1-10
+        writer.add_scalar('test loss', val_loss / len(test_loader), epoch + 1)
+        print("test accuracy", acc)
+    # 更新ViT的学习率     
+    scheduler.step()
 
-            # 前向传播
-            output = model(eeg_data, image_data)
-            # 计算损失
-            loss = nn.CrossEntropyLoss()(output, label)
-            # 反向传播和优化
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            _, predicted = torch.max(output, 1)
-            correct = (predicted == label).sum().item()
-            acc = correct / label.size(0)
-            writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i) 
-            writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  
-
-            print(f"Epoch: {epoch + 1}, Loss: {loss.item()}")
-
-        # 在验证集上评估模型
-        model.eval()
-        val_correct = 0
-        val_total = 0
-        val_loss = 0
-        with torch.no_grad():
-            for eeg_data, image_data, label in tqdm(test_loader, total=len(test_loader), desc="Testing"):
-                eeg_data, image_data, label = eeg_data.to(device), image_data.to(device), label.to(device)
-                outputs = model(eeg_data, image_data)
-                _, predicted = torch.max(outputs.data, 1)
-                val_total += label.size(0)
-                val_correct += (predicted == label).sum().item()
-
-                loss = nn.CrossEntropyLoss()(outputs, label)
-                val_loss += loss.item()
-
-            acc = val_correct / val_total
-            writer.add_scalar('test accuracy', acc, epoch + 1) # 从0-9变成1-10
-            writer.add_scalar('test loss', val_loss / len(test_loader), epoch + 1)
-            print("test accuracy", acc)
-
-    writer.close()
-    accuracies.append(acc)
-
-print('Accuracies:', accuracies)
-print('Max accuracy:', max(accuracies))
-print('Average accuracy:', sum(accuracies) / len(accuracies))
+writer.close()
 
 end_time = time.time()
 run_time_min = round((end_time - start_time) / 60)
