@@ -23,8 +23,6 @@ import math
 import torch.optim.lr_scheduler as lr_scheduler
 from sklearn.model_selection import train_test_split
 
-# print(dir(transforms))
-# exit()
 # swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
 swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
@@ -193,8 +191,7 @@ class MultiModalClassifier(nn.Module):
         '''
         image_data = self.img_processor(images=image_data, return_tensors="pt").to(device)
         
-        with torch.no_grad():
-            image_embedding = self.swin_model(**image_data)
+        image_embedding = self.swin_model(**image_data)
         image_embedding = image_embedding.last_hidden_state  # torch.Size([32, 49, 768])
     
         eeg_data = self.layernorm(eeg_data)
@@ -227,18 +224,19 @@ test_dataset = MultiModalDataset(test_data, test_labels)
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
-epochs = 500
+epochs = 100
 lr = 0.0001
 lrf= 0.01
 lf = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf) + lrf  # cosine
+max_lr = 0.0001
 # 定义损失函数和优化器
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-
+# scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
+scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.10)
 
 start_time = time.time()
-writer = SummaryWriter(f'runs/bjut_swin_onceSplit')
+writer = SummaryWriter(f'runs/bjut_swin_1S')
 for epoch in range(epochs):  # 假设我们训练10个epoch
     model.train()
     for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
@@ -255,6 +253,11 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        # 更新warm-up学习率 
+        writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"],  epoch * len(train_loader) + i)   
+        # 在更新调度器之前检查当前步数
+        if scheduler.last_epoch < scheduler.total_steps - 1:
+            scheduler.step()
 
         _, predicted = torch.max(output, 1)
         correct = (predicted == label).sum().item()
@@ -284,7 +287,8 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
         writer.add_scalar('test loss', val_loss / len(test_loader), epoch + 1)
         print("test accuracy", acc)
     # 更新ViT的学习率     
-    scheduler.step()
+    # writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"], epoch)   
+    # scheduler.step()
 
 writer.close()
 

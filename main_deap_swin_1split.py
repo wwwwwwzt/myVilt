@@ -6,7 +6,7 @@ import torch
 from PIL import Image
 from torch.utils.data import DataLoader
 import torch.nn as nn
-from transformers import AutoImageProcessor, AutoModel
+from transformers import AutoImageProcessor, AutoModel, SwinModel
 from tqdm import tqdm
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
@@ -17,9 +17,9 @@ import torch.optim.lr_scheduler as lr_scheduler
 '''
     -----------------------------数据初始化--------------------------------
 '''
-# vit模块来源：https://huggingface.co/google/vit-base-patch16-224/tree/main
-processor = AutoImageProcessor.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
-vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16-224")
+# swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
+swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
@@ -72,9 +72,9 @@ class MultiModalClassifier(nn.Module):
                  device=device, eeg_size=384
                  ):
         super(MultiModalClassifier, self).__init__()
-        self.img_processor = processor
-        self.vit_model = vitmodel
-        for param in self.vit_model.parameters():
+        self.img_processor = swin_processor
+        self.swin_model = swin_model
+        for param in self.swin_model.parameters():
             param.requires_grad = True
 
         self.token_type_embeddings = nn.Embedding(2, input_size)
@@ -102,7 +102,8 @@ class MultiModalClassifier(nn.Module):
             multi_embedding     # torch.Size([30, 211, 768]) batch_size,196+14+1,768
         '''
         image_data = self.img_processor(image_data, return_tensors="pt").to(device)
-        image_embedding = self.vit_model(**image_data).last_hidden_state[:,1:,:]
+        image_embedding = self.swin_model(**image_data)
+        image_embedding = image_embedding.last_hidden_state
 
         eeg_data = self.layernorm(eeg_data)
         eeg_embedding = self.eeg_proj(eeg_data)
@@ -168,7 +169,7 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
 tb_file_name = datetime.now().strftime('%m-%d_%H-%M') + "_deap_vit_1S"
-writer = SummaryWriter(f'runs/deap_vit_1S/{tb_file_name}')
+writer = SummaryWriter(f'runs/deap_swin_1S/{tb_file_name}')
 
 # 训练和验证模型
 for epoch in range(epochs):  # 假设我们训练10个epoch

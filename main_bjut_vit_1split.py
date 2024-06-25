@@ -231,7 +231,7 @@ scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 
 
 start_time = time.time()
-writer = SummaryWriter(f'runs/bjut_onceSplit')
+writer = SummaryWriter(f'runs/bjut_vit_1s')
 for epoch in range(epochs):  # 假设我们训练10个epoch
     model.train()
     for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):

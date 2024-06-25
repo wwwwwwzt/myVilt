@@ -10,4 +10,5 @@ data_preprocessed_matlab/
 .DS_Store
 **/.DS_Store
 .DS_Store?
-runs/
+runs/*
+!runs/classic_runs/
