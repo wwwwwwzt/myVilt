@@ -23,12 +23,12 @@ vitmodel = AutoModel.from_pretrained("/home/zcl/wzt/try/weights/vit-base-patch16
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s02/"
+image_data_folder = "./DEAP/faces/s01/"
 channels = 32
 # 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s02_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s02_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s01_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s01_labels.npy")
 label_counts = np.bincount(labels)
 print(label_counts) # [260 120 200 220]
 

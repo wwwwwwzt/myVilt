@@ -23,12 +23,12 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s02/"
+image_data_folder = "./DEAP/faces/s10/"
 channels = 32
 # 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s02_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s02_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s10_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s10_labels.npy")
 label_counts = np.bincount(labels)
 print(label_counts) # [260 120 200 220]
 
@@ -203,7 +203,7 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
             writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i)  # loss 800
             writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  # acc 800
 
-        print(f"Epoch: {epoch + 1}, Loss: {loss.item()}")
+        print(f"Epoch: {epoch + 1}, Training Loss: {loss.item()}")
 
     # 在验证集上评估模型
     model.eval()
