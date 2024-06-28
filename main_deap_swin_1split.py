@@ -23,12 +23,12 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s13/"
+image_data_folder = "./DEAP/faces/s22/"
 channels = 32
 # 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s13_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s13_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s22_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s22_labels.npy")
 label_counts = np.bincount(labels)
 print(label_counts) # [260 120 200 220]
 
