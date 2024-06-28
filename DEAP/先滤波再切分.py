@@ -102,14 +102,11 @@ def process_participant_data(participant_id):
     '''
         保存数据
     '''
-    np.save('./EEGData/s05_eeg.npy', eeg_data) # (800, 32, 384)
-    np.save('./EEGData/s05_labels.npy', labels) # (800,)
-
     np.save(f'./EEGData/{participant_str}_eeg.npy', eeg_data) # (800, 32, 384)
     np.save(f'./EEGData/{participant_str}_labels.npy', labels) # (800,)
 
     print(participant_id, "处理完成")
 
 # 循环处理s01到s22的数据
-for participant_id in range(20, 23):
+for participant_id in range(5, 6):
     process_participant_data(participant_id)
