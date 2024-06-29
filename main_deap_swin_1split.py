@@ -120,7 +120,7 @@ class MultiModalClassifier(nn.Module):
 
         # 取出cls token的输出
         cls_token_output = image_embedding[:, 0, :]
-        # cls_token_output = self.dropout(cls_token_output)
+        cls_token_output = self.dropout(cls_token_output)
 
         x = self.classifier(cls_token_output)
 
