@@ -23,12 +23,11 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s22/"
 channels = 32
 # 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}16_22_eeg.npy")
-labels = np.load(f"{eeg_data_folder}16_22_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}all_eeg.npy")
+labels = np.load(f"{eeg_data_folder}all_labels.npy")
 label_counts = np.bincount(labels)
 print(label_counts) # [260 120 200 220]
 
@@ -36,10 +35,11 @@ print(label_counts) # [260 120 200 220]
     -----------------------------组织图像数据,与eeg对齐--------------------------------
     1. 得到图像数据的numpy数组 (5600, 3, 224, 224)
 '''
-# 创建一个列表，用于存储所有图像文件的路径
+# 存储所有图像文件的路径
 image_file_list = []
+available_subjects = [1, 2, 6, 7, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22]
 # 从s16到s22遍历每个人
-for i in range(16, 23):
+for i in available_subjects:
     # 为每个人生成图像数据文件夹的路径
     person_image_data_folder = f"./DEAP/faces/s{str(i).zfill(2)}/"
     
@@ -78,7 +78,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, 
-                 device=device, eeg_size=384
+                 device=device, eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.2
                  ):
         super(MultiModalClassifier, self).__init__()
         self.img_processor = swin_processor
@@ -89,7 +89,7 @@ class MultiModalClassifier(nn.Module):
         self.token_type_embeddings = nn.Embedding(2, input_size)
         
         self.transformer_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=input_size, nhead=num_heads, dim_feedforward=dim_feedforward, batch_first=True),
+            nn.TransformerEncoderLayer(d_model=input_size, nhead=num_heads, dim_feedforward=dim_feedforward, dropout=transformer_dropout_rate, batch_first=True),
             num_layers=num_encoder_layers
         )
 
@@ -98,7 +98,9 @@ class MultiModalClassifier(nn.Module):
         self.layernorm = nn.LayerNorm(eeg_size)
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, input_size)).to(device)
-
+        self.fc1 = nn.Linear(input_size, 2048)
+        self.fc2 = nn.Linear(2048, num_classes)
+        self.dropout = nn.Dropout(cls_dropout_rate)
         self.classifier = nn.Linear(input_size,num_classes)
 
         
@@ -108,7 +110,7 @@ class MultiModalClassifier(nn.Module):
             eeg_embedding       # torch.Size([30, 14, 768])
             image_data          # torch.Size([30, 3, 224, 224])
             image_embedding     # torch.Size([30, 196, 768])
-            multi_embedding     # torch.Size([30, 211, 768]) batch_size,196+14+1,768
+            multi_embedding     # torch.Size([30, 82, 768]) batch_size, 32+49+1, 768
         '''
         image_data = self.img_processor(image_data, return_tensors="pt").to(device)
         image_embedding = self.swin_model(**image_data)
@@ -130,8 +132,12 @@ class MultiModalClassifier(nn.Module):
         multi_embedding = self.transformer_encoder(multi_embedding)  # torch.Size([30, 211, 768])
 
         # 取出cls token的输出
-        multi_embedding = image_embedding[:, 0, :]
-        x = self.classifier(multi_embedding)
+        cls_token_output = image_embedding[:, 0, :]
+
+        # 在cls token输出后加入dropout
+        cls_token_output = self.dropout(cls_token_output)
+
+        x = self.classifier(cls_token_output)
 
         return x
     

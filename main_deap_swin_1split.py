@@ -23,12 +23,12 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s22/"
+image_data_folder = "./DEAP/faces/s20/"
 channels = 32
 # 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s22_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s22_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s20_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s20_labels.npy")
 label_counts = np.bincount(labels)
 print(label_counts) # [260 120 200 220]
 
@@ -69,7 +69,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, 
-                 device=device, eeg_size=384
+                 device=device, eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.2
                  ):
         super(MultiModalClassifier, self).__init__()
         self.img_processor = swin_processor
@@ -80,19 +80,17 @@ class MultiModalClassifier(nn.Module):
         self.token_type_embeddings = nn.Embedding(2, input_size)
         
         self.transformer_encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=input_size, nhead=num_heads, dim_feedforward=dim_feedforward, batch_first=True),
+            nn.TransformerEncoderLayer(d_model=input_size, nhead=num_heads, dim_feedforward=dim_feedforward, dropout=transformer_dropout_rate, batch_first=True),
             num_layers=num_encoder_layers
         )
 
         self.eeg_proj = nn.Linear(eeg_size, input_size)
         self.activation = nn.ReLU()
         self.layernorm = nn.LayerNorm(eeg_size)
-
         self.cls_token = nn.Parameter(torch.zeros(1, 1, input_size)).to(device)
-
+        self.dropout = nn.Dropout(cls_dropout_rate)
         self.classifier = nn.Linear(input_size,num_classes)
 
-        
     def forward(self, eeg_data, image_data):
         '''
             eeg_data            # torch.Size([30, 14, 384]) 
@@ -118,11 +116,13 @@ class MultiModalClassifier(nn.Module):
 
         multi_embedding = torch.cat((self.cls_token.expand(multi_embedding.size(0), -1, -1), multi_embedding), dim=1)
 
-        multi_embedding = self.transformer_encoder(multi_embedding)  # torch.Size([30, 211, 768])
+        multi_embedding = self.transformer_encoder(multi_embedding)
 
         # 取出cls token的输出
-        multi_embedding = image_embedding[:, 0, :]
-        x = self.classifier(multi_embedding)
+        cls_token_output = image_embedding[:, 0, :]
+        # cls_token_output = self.dropout(cls_token_output)
+
+        x = self.classifier(cls_token_output)
 
         return x
     
@@ -155,14 +155,12 @@ test_labels = labels[test_index]
 # 计算并打印每个类别的数量
 unique_train, counts_train = np.unique(train_labels, return_counts=True)
 unique_test, counts_test = np.unique(test_labels, return_counts=True)
-print("训练集中每个类别的数量：", dict(zip(unique_train, counts_train))) # {0: 208, 1: 96, 2: 160, 3: 176} 80%
-print("测试集中每个类别的数量：", dict(zip(unique_test, counts_test)))   # {0: 52, 1: 24, 2: 40, 3: 44} 20%
+print("训练集中每个类别的数量：", dict(zip(unique_train, counts_train)))
+print("测试集中每个类别的数量：", dict(zip(unique_test, counts_test)))
 
-# 创建数据集
+# 创建数据集、数据加载器
 train_dataset = MultiModalDataset(train_data, train_labels)
 test_dataset = MultiModalDataset(test_data, test_labels)
-
-# 创建数据加载器
 train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
 test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
@@ -170,14 +168,13 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
 
 writer = SummaryWriter(f'runs/deap_swin_1S')
-# tb_file_name = datetime.now().strftime('%m-%d_%H-%M') + "_deap_vit_1S"
-# writer = SummaryWriter(f'runs/deap_swin_1S/{tb_file_name}')
 
-# 训练和验证模型
-for epoch in range(epochs):  # 假设我们训练10个epoch
+for epoch in range(epochs):
+    train_bar = tqdm(enumerate(train_loader),total=len(train_loader),desc="Training", leave=False)
     # 训练阶段
     model.train()
-    for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
+
+    for i, (eeg_data, image_data, label) in enumerate(train_loader):
         # 将数据移动到设备上
         eeg_data = eeg_data.to(device)
         image_data = image_data.to(device)
@@ -203,7 +200,8 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
             writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i)  # loss 800
             writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  # acc 800
 
-        print(f"Epoch: {epoch + 1}, Training Loss: {loss.item()}")
+        train_bar.update(1)
+        train_bar.write(f"Epoch: {epoch + 1}, Training Loss: {loss.item()}")
 
     # 在验证集上评估模型
     model.eval()

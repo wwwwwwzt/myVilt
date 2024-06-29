@@ -1,6 +1,10 @@
 # myVilt
 
-这是一个多模态学习仓库，基于 Vilt/ViT/Swin-Transformer, 通过表情和脑电两个模态来识别情绪。
+这是一个多模态学习仓库，基于 Vilt/ViT/Swin-Transformer, 基于 BJUT 和 DEAP 两个多模态数据集，通过表情和脑电两个模态来识别情绪。
+
+1.0 版本，使用vilt，代码在./main_bjut_vilt
+2.0 版本，使用ViT，代码在./main_vit
+3.0 版本，使用Swin-Transformer
 
 ## 可用的data
 
@@ -19,4 +23,4 @@ faces 缺失：s03 s04 s05 s11 s14 s15
 
 没识别到脸
     - s04 photo/323照片 手挡住了脸 在第17个视频
-    - s15 photo/237照片 手挡住了脸
+    - s15 photo/237照片 手挡住了脸 在第12个视频
