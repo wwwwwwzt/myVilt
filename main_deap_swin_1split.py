@@ -21,14 +21,15 @@ import torch.optim.lr_scheduler as lr_scheduler
 swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
+tb_dir = "runs/deap_swin2"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s20/"
+image_data_folder = "./DEAP/faces/s21/"
 channels = 32
 # 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s20_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s20_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s21_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s21_labels.npy")
 label_counts = np.bincount(labels)
 print(label_counts) # [260 120 200 220]
 
@@ -68,8 +69,8 @@ class MultiModalDataset(torch.utils.data.Dataset):
 # 分类模型
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
-                 num_heads=12, dim_feedforward=2048, num_encoder_layers=6, 
-                 device=device, eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.2
+                 num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
+                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.3
                  ):
         super(MultiModalClassifier, self).__init__()
         self.img_processor = swin_processor
@@ -120,7 +121,7 @@ class MultiModalClassifier(nn.Module):
 
         # 取出cls token的输出
         cls_token_output = image_embedding[:, 0, :]
-        cls_token_output = self.dropout(cls_token_output)
+        # cls_token_output = self.dropout(cls_token_output)
 
         x = self.classifier(cls_token_output)
 
@@ -130,11 +131,9 @@ class MultiModalClassifier(nn.Module):
 # train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30)
 train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30, stratify=labels)
 
-epochs = 100
-start_time = time.time()
-
 model = MultiModalClassifier().to(device) 
 
+epochs = 100
 lr = 0.0001
 lrf= 0.01
 max_lr = 0.00001
@@ -167,11 +166,10 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
 
-writer = SummaryWriter(f'runs/deap_swin_1S')
-
+start_time = time.time()
+writer = SummaryWriter(f'{tb_dir}')
 for epoch in range(epochs):
     train_bar = tqdm(enumerate(train_loader),total=len(train_loader),desc="Training", leave=False)
-    # 训练阶段
     model.train()
 
     for i, (eeg_data, image_data, label) in enumerate(train_loader):
@@ -225,8 +223,8 @@ for epoch in range(epochs):
         writer.add_scalar('test loss', test_loss / len(test_loader), epoch + 1)
         print(f"Accuracy: {acc}")
     # 更新ViT的学习率 
-    scheduler.step()
     writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"], epoch)
+    scheduler.step()
 
 writer.close()
 end_time = time.time()

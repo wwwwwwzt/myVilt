@@ -184,7 +184,7 @@ test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
 
-writer = SummaryWriter(f'runs/deap_swin_1S')
+writer = SummaryWriter(f'runs/deap_swin_all')
 # tb_file_name = datetime.now().strftime('%m-%d_%H-%M') + "_deap_vit_1S"
 # writer = SummaryWriter(f'runs/deap_swin_1S/{tb_file_name}')
 
