@@ -21,26 +21,22 @@ import torch.optim.lr_scheduler as lr_scheduler
 swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
+tb_dir = "runs/deap_swin_all"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
 channels = 32
-# 3s x 128Hz = 384
 samples = 384
 eeg_data = np.load(f"{eeg_data_folder}all_eeg.npy")
 labels = np.load(f"{eeg_data_folder}all_labels.npy")
 label_counts = np.bincount(labels)
-print(label_counts) # [260 120 200 220]
-
+random_state = 30
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
-    1. 得到图像数据的numpy数组 (5600, 3, 224, 224)
 '''
 # 存储所有图像文件的路径
 image_file_list = []
 available_subjects = [1, 2, 6, 7, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22]
-# 从s16到s22遍历每个人
 for i in available_subjects:
-    # 为每个人生成图像数据文件夹的路径
     person_image_data_folder = f"./DEAP/faces/s{str(i).zfill(2)}/"
     
     # 遍历每个人的图像文件
@@ -48,7 +44,7 @@ for i in available_subjects:
         filename = f"{person_image_data_folder}{j}.jpg"
         image_file_list.append(filename)
 
-print("image_file_list:", len(image_file_list)) # 应该是5600，因为每个人有800张图像，共7个人
+print("image_file_list:", len(image_file_list))
 
 # 确保eeg_data和image_file_list的长度相同
 if len(eeg_data) == len(image_file_list):
@@ -77,10 +73,12 @@ class MultiModalDataset(torch.utils.data.Dataset):
 # 分类模型
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
-                 num_heads=12, dim_feedforward=2048, num_encoder_layers=6, 
-                 device=device, eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.2
+                 num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
+                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.1
                  ):
         super(MultiModalClassifier, self).__init__()
+        self.transformer_dropout_rate = transformer_dropout_rate
+        self.cls_dropout_rate = cls_dropout_rate
         self.img_processor = swin_processor
         self.swin_model = swin_model
         for param in self.swin_model.parameters():
@@ -96,22 +94,13 @@ class MultiModalClassifier(nn.Module):
         self.eeg_proj = nn.Linear(eeg_size, input_size)
         self.activation = nn.ReLU()
         self.layernorm = nn.LayerNorm(eeg_size)
-
         self.cls_token = nn.Parameter(torch.zeros(1, 1, input_size)).to(device)
         self.fc1 = nn.Linear(input_size, 2048)
         self.fc2 = nn.Linear(2048, num_classes)
         self.dropout = nn.Dropout(cls_dropout_rate)
         self.classifier = nn.Linear(input_size,num_classes)
 
-        
     def forward(self, eeg_data, image_data):
-        '''
-            eeg_data            # torch.Size([30, 14, 384]) 
-            eeg_embedding       # torch.Size([30, 14, 768])
-            image_data          # torch.Size([30, 3, 224, 224])
-            image_embedding     # torch.Size([30, 196, 768])
-            multi_embedding     # torch.Size([30, 82, 768]) batch_size, 32+49+1, 768
-        '''
         image_data = self.img_processor(image_data, return_tensors="pt").to(device)
         image_embedding = self.swin_model(**image_data)
         image_embedding = image_embedding.last_hidden_state
@@ -133,8 +122,6 @@ class MultiModalClassifier(nn.Module):
 
         # 取出cls token的输出
         cls_token_output = image_embedding[:, 0, :]
-
-        # 在cls token输出后加入dropout
         cls_token_output = self.dropout(cls_token_output)
 
         x = self.classifier(cls_token_output)
@@ -142,19 +129,17 @@ class MultiModalClassifier(nn.Module):
         return x
     
 # 一次划分
-# train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30)
-train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30, stratify=labels)
+train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state, stratify=labels)
 
-epochs = 100
+
 start_time = time.time()
-
 model = MultiModalClassifier().to(device) 
 
+epochs = 100
 lr = 0.0001
 lrf= 0.01
 max_lr = 0.00001
 
-# 定义损失函数和优化器
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 # ViT学习率
@@ -184,26 +169,19 @@ test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
 
-writer = SummaryWriter(f'runs/deap_swin_all')
-# tb_file_name = datetime.now().strftime('%m-%d_%H-%M') + "_deap_vit_1S"
-# writer = SummaryWriter(f'runs/deap_swin_1S/{tb_file_name}')
-
-# 训练和验证模型
-for epoch in range(epochs):  # 假设我们训练10个epoch
-    # 训练阶段
+writer = SummaryWriter(f'{tb_dir}')
+writer.add_scalar('transformer dropout', model.transformer_dropout_rate, global_step=0)
+writer.add_scalar('cls dropout', model.cls_dropout_rate, global_step=0)
+for epoch in range(epochs):
+    train_bar = tqdm(enumerate(train_loader),total=len(train_loader),desc="Training", leave=False)
     model.train()
-    for i, (eeg_data, image_data, label) in tqdm(enumerate(train_loader),total=len(train_loader),desc="Training"):
-        # 将数据移动到设备上
+    for i, (eeg_data, image_data, label) in enumerate(train_loader):
         eeg_data = eeg_data.to(device)
         image_data = image_data.to(device)
         label = label.to(device)
 
-        # 前向传播
         output = model(eeg_data, image_data)
-        # 计算损失
         loss = nn.CrossEntropyLoss()(output, label)
-
-        # 反向传播和优化
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -218,9 +196,10 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
             writer.add_scalar('training loss', loss.item(), epoch * len(train_loader) + i)  # loss 800
             writer.add_scalar('training accuracy', acc, epoch * len(train_loader) + i)  # acc 800
 
-        print(f"Epoch: {epoch + 1}, Training Loss: {loss.item()}")
+        train_bar.update(1)
+        train_bar.write(f"Epoch: {epoch + 1}, Training Loss: {loss.item()}")
 
-    # 在验证集上评估模型
+    # 在测试集上评估模型
     model.eval()
     test_correct = 0
     test_total = 0
@@ -242,9 +221,10 @@ for epoch in range(epochs):  # 假设我们训练10个epoch
         writer.add_scalar('test loss', test_loss / len(test_loader), epoch + 1)
         print(f"Accuracy: {acc}")
     # 更新ViT的学习率 
-    scheduler.step()
     writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"], epoch)
+    scheduler.step()
 
+writer.add_scalar('random_state', random_state, global_step=0)
 writer.close()
 end_time = time.time()
 run_time_min = round((end_time - start_time) / 60)

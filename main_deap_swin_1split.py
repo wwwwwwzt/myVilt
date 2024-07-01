@@ -24,14 +24,12 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 tb_dir = "runs/deap_swin1"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s21/"
+image_data_folder = "./DEAP/faces/s20/"
 channels = 32
-# 3s x 128Hz = 384
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s21_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s21_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s20_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s20_labels.npy")
 label_counts = np.bincount(labels)
-print(label_counts) # [260 120 200 220]
 
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
@@ -70,7 +68,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.3
+                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.2
                  ):
         super(MultiModalClassifier, self).__init__()
         self.img_processor = swin_processor
@@ -173,17 +171,12 @@ for epoch in range(epochs):
     model.train()
 
     for i, (eeg_data, image_data, label) in enumerate(train_loader):
-        # 将数据移动到设备上
         eeg_data = eeg_data.to(device)
         image_data = image_data.to(device)
         label = label.to(device)
 
-        # 前向传播
         output = model(eeg_data, image_data)
-        # 计算损失
         loss = nn.CrossEntropyLoss()(output, label)
-
-        # 反向传播和优化
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -201,7 +194,7 @@ for epoch in range(epochs):
         train_bar.update(1)
         train_bar.write(f"Epoch: {epoch + 1}, Training Loss: {loss.item()}")
 
-    # 在验证集上评估模型
+    # 在测试集上评估模型
     model.eval()
     test_correct = 0
     test_total = 0
