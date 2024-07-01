@@ -21,7 +21,7 @@ import torch.optim.lr_scheduler as lr_scheduler
 swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
-tb_dir = "runs/deap_swin2"
+tb_dir = "runs/deap_swin1"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
 image_data_folder = "./DEAP/faces/s21/"
@@ -121,7 +121,7 @@ class MultiModalClassifier(nn.Module):
 
         # 取出cls token的输出
         cls_token_output = image_embedding[:, 0, :]
-        # cls_token_output = self.dropout(cls_token_output)
+        cls_token_output = self.dropout(cls_token_output)
 
         x = self.classifier(cls_token_output)
 

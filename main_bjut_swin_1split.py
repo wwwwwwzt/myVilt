@@ -30,7 +30,7 @@ from sklearn.model_selection import train_test_split
 swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
-tb_dir = "runs/bjut_swin2"
+tb_dir = "runs/bjut_swin"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './BJUT/EEGData/'
 image_data_folder = "./BJUT/facesFromFrames810/"
@@ -150,7 +150,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
         return eeg_data, image_data, label
 
 # 随机划分训练集和测试集
-train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.2, random_state=40)
+train_data, test_data, train_labels, test_labels = train_test_split(data, labels, test_size=0.2, random_state=30)
 
 # 分类模型
 class MultiModalClassifier(nn.Module):
