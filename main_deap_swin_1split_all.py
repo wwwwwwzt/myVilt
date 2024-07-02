@@ -74,7 +74,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.1
+                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.2
                  ):
         super(MultiModalClassifier, self).__init__()
         self.transformer_dropout_rate = transformer_dropout_rate

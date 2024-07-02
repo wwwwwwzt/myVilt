@@ -24,12 +24,13 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 tb_dir = "runs/deap_swin1"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s20/"
+image_data_folder = "./DEAP/faces/s01/"
 channels = 32
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s20_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s20_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s01_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s01_labels.npy")
 label_counts = np.bincount(labels)
+random_state = 30
 
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
@@ -68,9 +69,11 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.2
+                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.3
                  ):
         super(MultiModalClassifier, self).__init__()
+        self.transformer_dropout_rate = transformer_dropout_rate
+        self.cls_dropout_rate = cls_dropout_rate
         self.img_processor = swin_processor
         self.swin_model = swin_model
         for param in self.swin_model.parameters():
@@ -126,8 +129,8 @@ class MultiModalClassifier(nn.Module):
         return x
     
 # 一次划分
-# train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30)
-train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=30, stratify=labels)
+# train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state)
+train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state, stratify=labels)
 
 model = MultiModalClassifier().to(device) 
 
@@ -166,6 +169,8 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 
 start_time = time.time()
 writer = SummaryWriter(f'{tb_dir}')
+writer.add_scalar('transformer dropout', model.transformer_dropout_rate, global_step=0)
+writer.add_scalar('cls dropout', model.cls_dropout_rate, global_step=0)
 for epoch in range(epochs):
     train_bar = tqdm(enumerate(train_loader),total=len(train_loader),desc="Training", leave=False)
     model.train()
@@ -219,6 +224,7 @@ for epoch in range(epochs):
     writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"], epoch)
     scheduler.step()
 
+writer.add_scalar('random_state', random_state, global_step=0)
 writer.close()
 end_time = time.time()
 run_time_min = round((end_time - start_time) / 60)
