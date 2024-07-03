@@ -18,17 +18,21 @@ import torch.optim.lr_scheduler as lr_scheduler
     -----------------------------数据初始化--------------------------------
 '''
 # swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
-swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
-swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+
+# swin_finetuned模块来源：https://huggingface.co/MahmoudWSegni/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12_right
+swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
 tb_dir = "runs/deap_swin1"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s01/"
+image_data_folder = "./DEAP/faces/s16/"
 channels = 32
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s01_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s01_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s16_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s16_labels.npy")
 label_counts = np.bincount(labels)
 random_state = 30
 
@@ -69,7 +73,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.3
+                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.1
                  ):
         super(MultiModalClassifier, self).__init__()
         self.transformer_dropout_rate = transformer_dropout_rate
@@ -167,7 +171,7 @@ test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
 
-start_time = time.time()
+start_time = datetime.now()
 writer = SummaryWriter(f'{tb_dir}')
 writer.add_scalar('transformer dropout', model.transformer_dropout_rate, global_step=0)
 writer.add_scalar('cls dropout', model.cls_dropout_rate, global_step=0)
@@ -226,6 +230,10 @@ for epoch in range(epochs):
 
 writer.add_scalar('random_state', random_state, global_step=0)
 writer.close()
-end_time = time.time()
-run_time_min = round((end_time - start_time) / 60)
+end_time = datetime.now()
+run_time = end_time - start_time
+run_time_seconds = run_time.total_seconds()  # 获取总秒数
+run_time_min = round(run_time_seconds / 60)  # 转换为分钟
+print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Total runtime: {run_time_min} minutes")

@@ -18,7 +18,7 @@ from transformers import AutoImageProcessor,SwinModel,AutoModelForImageClassific
 from tqdm import tqdm
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
-import time
+from datetime import datetime
 import math
 import torch.optim.lr_scheduler as lr_scheduler
 from sklearn.model_selection import train_test_split
@@ -241,7 +241,7 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.10)
 
-start_time = time.time()
+start_time = datetime.now()
 writer = SummaryWriter(f'{tb_dir}')
 for epoch in range(epochs):
     train_bar = tqdm(enumerate(train_loader),total=len(train_loader),desc="Training", leave=False)
@@ -302,6 +302,10 @@ for epoch in range(epochs):
     scheduler.step()
 
 writer.close()
-end_time = time.time()
-run_time_min = round((end_time - start_time) / 60)
+end_time = datetime.now()
+run_time = end_time - start_time
+run_time_seconds = run_time.total_seconds()  # 获取总秒数
+run_time_min = round(run_time_seconds / 60)  # 转换为分钟
+print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Total runtime: {run_time_min} minutes")

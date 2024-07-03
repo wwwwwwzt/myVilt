@@ -74,7 +74,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.2
+                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.3
                  ):
         super(MultiModalClassifier, self).__init__()
         self.transformer_dropout_rate = transformer_dropout_rate
@@ -132,7 +132,7 @@ class MultiModalClassifier(nn.Module):
 train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state, stratify=labels)
 
 
-start_time = time.time()
+start_time = datetime.now()
 model = MultiModalClassifier().to(device) 
 
 epochs = 100
@@ -226,6 +226,11 @@ for epoch in range(epochs):
 
 writer.add_scalar('random_state', random_state, global_step=0)
 writer.close()
-end_time = time.time()
-run_time_min = round((end_time - start_time) / 60)
+
+end_time = datetime.now()
+run_time = end_time - start_time
+run_time_seconds = run_time.total_seconds()  # 获取总秒数
+run_time_min = round(run_time_seconds / 60)  # 转换为分钟
+print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Total runtime: {run_time_min} minutes")
