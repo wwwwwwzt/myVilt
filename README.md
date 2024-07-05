@@ -5,6 +5,7 @@
 1.0 版本，使用vilt，代码在./main_bjut_vilt
 2.0 版本，使用ViT，代码在./main_vit
 3.0 版本，使用Swin-Transformer
+3.1 版本  使用Swin_finetune
 
 ## 可用的data
 

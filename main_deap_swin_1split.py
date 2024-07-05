@@ -14,25 +14,26 @@ import time
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 import torch.optim.lr_scheduler as lr_scheduler
+import random
 '''
     -----------------------------数据初始化--------------------------------
 '''
 # swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
-# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
-# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 # swin_finetuned模块来源：https://huggingface.co/MahmoudWSegni/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12_right
-swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
-swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
 tb_dir = "runs/deap_swin1"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s16/"
+image_data_folder = "./DEAP/faces/s21/"
 channels = 32
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s16_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s16_labels.npy")
+eeg_data = np.load(f"{eeg_data_folder}s21_eeg.npy")
+labels = np.load(f"{eeg_data_folder}s21_labels.npy")
 label_counts = np.bincount(labels)
 random_state = 30
 
@@ -51,6 +52,15 @@ print("image_file_list:", len(image_file_list)) # 800
 combined_data = list(zip(eeg_data, image_file_list)) # (800, 14, 384) + (800)
 # 现在，combined_data是一个长度为800的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个800的数组
 data = combined_data
+
+# 设置随机种子
+def set_seed(seed):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+set_seed(0)
 
 class MultiModalDataset(torch.utils.data.Dataset):
     def __init__(self, data, labels):
@@ -73,7 +83,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.1
+                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.2
                  ):
         super(MultiModalClassifier, self).__init__()
         self.transformer_dropout_rate = transformer_dropout_rate
@@ -131,7 +141,7 @@ class MultiModalClassifier(nn.Module):
         x = self.classifier(cls_token_output)
 
         return x
-    
+
 # 一次划分
 # train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state)
 train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state, stratify=labels)
@@ -175,6 +185,7 @@ start_time = datetime.now()
 writer = SummaryWriter(f'{tb_dir}')
 writer.add_scalar('transformer dropout', model.transformer_dropout_rate, global_step=0)
 writer.add_scalar('cls dropout', model.cls_dropout_rate, global_step=0)
+test_accuracies = []
 for epoch in range(epochs):
     train_bar = tqdm(enumerate(train_loader),total=len(train_loader),desc="Training", leave=False)
     model.train()
@@ -221,6 +232,7 @@ for epoch in range(epochs):
             test_loss += loss.item()
 
         acc = test_correct / test_total
+        test_accuracies.append(acc)
         writer.add_scalar('test accuracy', acc, epoch + 1) # 从0-9变成1-10
         writer.add_scalar('test loss', test_loss / len(test_loader), epoch + 1)
         print(f"Accuracy: {acc}")
@@ -230,6 +242,9 @@ for epoch in range(epochs):
 
 writer.add_scalar('random_state', random_state, global_step=0)
 writer.close()
+
+print("Max accuracy:", max(test_accuracies))
+
 end_time = datetime.now()
 run_time = end_time - start_time
 run_time_seconds = run_time.total_seconds()  # 获取总秒数
