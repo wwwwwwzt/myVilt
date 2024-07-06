@@ -26,16 +26,14 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 # swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 # swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
+id = 's01'
 tb_dir = "runs/deap_swin1"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-eeg_data_folder = './DEAP/EEGData/'
-image_data_folder = "./DEAP/faces/s21/"
 channels = 32
 samples = 384
-eeg_data = np.load(f"{eeg_data_folder}s21_eeg.npy")
-labels = np.load(f"{eeg_data_folder}s21_labels.npy")
+eeg_data = np.load(f"./DEAP/EEGData/{id}_eeg.npy")
+labels = np.load(f"./DEAP/EEGData/{id}_labels.npy")
 label_counts = np.bincount(labels)
-random_state = 30
 
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
@@ -44,7 +42,7 @@ random_state = 30
 # 创建一个列表，用于存储所有图像文件的路径
 image_file_list = []
 for i in range(1, 801):
-    filename = f"{image_data_folder}{i}.jpg"
+    filename = f"./DEAP/faces/{id}/{i}.jpg"
     image_file_list.append(filename)
 print("image_file_list:", len(image_file_list)) # 800
 
@@ -144,7 +142,7 @@ class MultiModalClassifier(nn.Module):
 
 # 一次划分
 # train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state)
-train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state, stratify=labels)
+train_index, test_index = train_test_split(range(len(data)), test_size=0.2, stratify=labels)
 
 model = MultiModalClassifier().to(device) 
 
@@ -240,9 +238,9 @@ for epoch in range(epochs):
     writer.add_scalar('learning rate', optimizer.param_groups[0]["lr"], epoch)
     scheduler.step()
 
-writer.add_scalar('random_state', random_state, global_step=0)
 writer.close()
 
+print("\n--------------------------训练结束--------------------------")
 print("Max accuracy:", max(test_accuracies))
 
 end_time = datetime.now()
@@ -252,3 +250,6 @@ run_time_min = round(run_time_seconds / 60)  # 转换为分钟
 print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Total runtime: {run_time_min} minutes")
+
+with open('./第四轮/第四轮记录.md', 'w') as f:
+    f.write('{}  {}\n'.format(id, max(test_accuracies)))
