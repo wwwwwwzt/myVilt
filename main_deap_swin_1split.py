@@ -1,4 +1,3 @@
-import os
 import math
 import pandas as pd
 import numpy as np
@@ -10,7 +9,6 @@ from transformers import AutoImageProcessor, AutoModel, SwinModel
 from tqdm import tqdm
 from torchvision import transforms
 from torch.utils.tensorboard import SummaryWriter
-import time
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 import torch.optim.lr_scheduler as lr_scheduler
@@ -19,15 +17,15 @@ import random
     -----------------------------数据初始化--------------------------------
 '''
 # swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
-swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
-swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 # swin_finetuned模块来源：https://huggingface.co/MahmoudWSegni/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12_right
-# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
-# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
-id = 's01'
-tb_dir = "runs/deap_swin1"
+id = 's07'
+tb_dir = "runs/deap_swin4"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 channels = 32
 samples = 384

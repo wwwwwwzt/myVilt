@@ -1,5 +1,5 @@
 EEGData/
-weights/
+*.bin
 *.jpg
 *.csv
 *.pth
