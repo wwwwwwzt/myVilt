@@ -14,7 +14,7 @@ from sklearn.model_selection import train_test_split
 import torch.optim.lr_scheduler as lr_scheduler
 import random
 '''
-    -----------------------------数据初始化--------------------------------
+    -----------------------------超参数定义--------------------------------
 '''
 # swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
 # swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
@@ -24,18 +24,39 @@ import random
 swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
-# swin_v2 模块来源：https://huggingface.co/microsoft/swinv2-tiny-patch4-window8-256
-swin_processor = AutoImageProcessor.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
-swin_model = SwinModel.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
-
-id = 's07'
-tb_dir = "runs/deap_swin4"
+test_id = '1'
+tb_dir = "runs/deap_swin_dep"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 channels = 32
 samples = 384
-eeg_data = np.load(f"./DEAP/EEGData/{id}_eeg.npy")
-labels = np.load(f"./DEAP/EEGData/{id}_labels.npy")
-label_counts = np.bincount(labels)
+eeg_data_folder = './DEAP/EEGData/'
+eeg_data = np.load(f"{eeg_data_folder}{id}_eeg.npy")
+labels = np.load(f"{eeg_data_folder}{id}_labels.npy")
+test_eeg_data = np.load(f"{eeg_data_folder}{id}_eeg.npy")
+available_subjects = [1, 2, 6, 7, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22]
+
+'''
+    -----------------------------合并训练集的所有eeg和label--------------------------------
+'''
+all_eeg_data = []
+all_labels = []
+for i in available_subjects:
+    eeg_file = f"{eeg_data_folder}s{str(i).zfill(2)}_eeg.npy"
+    label_file = f"{eeg_data_folder}s{str(i).zfill(2)}_labels.npy"
+    # 尝试加载 EEG 数据和标签，如果文件不存在则跳过
+    try:
+        eeg_data = np.load(eeg_file)
+        labels = np.load(label_file)
+        
+        all_eeg_data.append(eeg_data)
+        all_labels.append(labels)
+    except FileNotFoundError:
+        print(f"Data for subject {i} not found!!!!!!!!!!!!!!!!!")
+
+# 将所有人的数据拼接到一起
+all_eeg_data = np.concatenate(all_eeg_data, axis=0)
+all_labels = np.concatenate(all_labels, axis=0)
+
 
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
@@ -43,10 +64,14 @@ label_counts = np.bincount(labels)
 '''
 # 创建一个列表，用于存储所有图像文件的路径
 image_file_list = []
-for i in range(1, 801):
-    filename = f"./DEAP/faces/{id}/{i}.jpg"
-    image_file_list.append(filename)
-print("image_file_list:", len(image_file_list)) # 800
+available_subjects = [1, 2, 6, 7, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22]
+train_ids = [subject for subject in available_subjects if str(subject) != test_id]
+for i in train_ids:
+    person_image_data_folder = f"./DEAP/faces/s{str(i).zfill(2)}/" 
+    # 遍历每个人的图像文件
+    for j in range(1, 801):
+        filename = f"{person_image_data_folder}{j}.jpg"
+        image_file_list.append(filename)
 
 # eeg、图片组合在一起
 combined_data = list(zip(eeg_data, image_file_list)) # (800, 14, 384) + (800)
@@ -253,5 +278,5 @@ print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Total runtime: {run_time_min} minutes")
 
-with open('./第五轮/第五轮记录.md', 'a') as f:
+with open('./第四轮/第四轮记录.md', 'a') as f:
     f.write('{}  {}\n'.format(id, max(test_accuracies)))
