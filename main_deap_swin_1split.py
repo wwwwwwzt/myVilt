@@ -17,18 +17,18 @@ import random
     -----------------------------数据初始化--------------------------------
 '''
 # swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
-# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
-# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 # swin_finetuned模块来源：https://huggingface.co/MahmoudWSegni/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12_right
-swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
-swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
 # swin_v2 模块来源：https://huggingface.co/microsoft/swinv2-tiny-patch4-window8-256
-swin_processor = AutoImageProcessor.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
-swin_model = SwinModel.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
+# swin_processor = AutoImageProcessor.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
+# swin_model = SwinModel.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
 
-id = 's07'
+id = 's18'
 tb_dir = "runs/deap_swin4"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 channels = 32
@@ -83,7 +83,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.2
+                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.1
                  ):
         super(MultiModalClassifier, self).__init__()
         self.transformer_dropout_rate = transformer_dropout_rate

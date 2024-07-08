@@ -30,17 +30,16 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 channels = 32
 samples = 384
 eeg_data_folder = './DEAP/EEGData/'
-eeg_data = np.load(f"{eeg_data_folder}{id}_eeg.npy")
-labels = np.load(f"{eeg_data_folder}{id}_labels.npy")
 test_eeg_data = np.load(f"{eeg_data_folder}{id}_eeg.npy")
+test_labels = np.load(f"{eeg_data_folder}{id}_labels.npy")
 available_subjects = [1, 2, 6, 7, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22]
-
+train_ids = [subject for subject in available_subjects if str(subject) != test_id]
 '''
     -----------------------------合并训练集的所有eeg和label--------------------------------
 '''
-all_eeg_data = []
-all_labels = []
-for i in available_subjects:
+train_eeg_data = []
+train_labels = []
+for i in train_ids:
     eeg_file = f"{eeg_data_folder}s{str(i).zfill(2)}_eeg.npy"
     label_file = f"{eeg_data_folder}s{str(i).zfill(2)}_labels.npy"
     # 尝试加载 EEG 数据和标签，如果文件不存在则跳过
@@ -48,35 +47,35 @@ for i in available_subjects:
         eeg_data = np.load(eeg_file)
         labels = np.load(label_file)
         
-        all_eeg_data.append(eeg_data)
-        all_labels.append(labels)
+        train_eeg_data.append(eeg_data)
+        train_labels.append(labels)
     except FileNotFoundError:
         print(f"Data for subject {i} not found!!!!!!!!!!!!!!!!!")
 
-# 将所有人的数据拼接到一起
-all_eeg_data = np.concatenate(all_eeg_data, axis=0)
-all_labels = np.concatenate(all_labels, axis=0)
-
-
+train_eeg_data = np.concatenate(train_eeg_data, axis=0)
+train_labels = np.concatenate(train_labels, axis=0)
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
-    1. 得到图像数据的numpy数组 (800, 3, 224, 224)
 '''
 # 创建一个列表，用于存储所有图像文件的路径
-image_file_list = []
-available_subjects = [1, 2, 6, 7, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22]
-train_ids = [subject for subject in available_subjects if str(subject) != test_id]
+train_image_file_list = []
 for i in train_ids:
     person_image_data_folder = f"./DEAP/faces/s{str(i).zfill(2)}/" 
     # 遍历每个人的图像文件
     for j in range(1, 801):
         filename = f"{person_image_data_folder}{j}.jpg"
-        image_file_list.append(filename)
+        train_image_file_list.append(filename)
 
 # eeg、图片组合在一起
-combined_data = list(zip(eeg_data, image_file_list)) # (800, 14, 384) + (800)
-# 现在，combined_data是一个长度为800的数组，每个元素都是一个元组，元组中包含一个14x384的数组和一个800的数组
+combined_data = list(zip(train_eeg_data, train_image_file_list))
+
 data = combined_data
+
+train_data = [data[i] for i in train_index]
+test_data = [data[i] for i in test_index]
+train_labels = labels[train_index]
+test_labels = labels[test_index]
+
 
 # 设置随机种子
 def set_seed(seed):
@@ -166,10 +165,6 @@ class MultiModalClassifier(nn.Module):
         x = self.classifier(cls_token_output)
 
         return x
-
-# 一次划分
-# train_index, test_index = train_test_split(range(len(data)), test_size=0.2, random_state=random_state)
-train_index, test_index = train_test_split(range(len(data)), test_size=0.2, stratify=labels)
 
 model = MultiModalClassifier().to(device) 
 
