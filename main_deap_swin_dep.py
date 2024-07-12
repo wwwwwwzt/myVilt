@@ -30,8 +30,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 channels = 32
 samples = 384
 eeg_data_folder = './DEAP/EEGData/'
-test_eeg_data = np.load(f"{eeg_data_folder}{id}_eeg.npy")
-test_labels = np.load(f"{eeg_data_folder}{id}_labels.npy")
+test_eeg_data = np.load(f"{eeg_data_folder}s{str(test_id).zfill(2)}_eeg.npy")
+test_labels = np.load(f"{eeg_data_folder}s{str(test_id).zfill(2)}_labels.npy")
 available_subjects = [1, 2, 6, 7, 8, 9, 10, 12, 13, 16, 17, 18, 19, 20, 21, 22]
 train_ids = [subject for subject in available_subjects if str(subject) != test_id]
 '''
@@ -57,7 +57,7 @@ train_labels = np.concatenate(train_labels, axis=0)
 '''
     -----------------------------组织图像数据,与eeg对齐--------------------------------
 '''
-# 创建一个列表，用于存储所有图像文件的路径
+# 训练集
 train_image_file_list = []
 for i in train_ids:
     person_image_data_folder = f"./DEAP/faces/s{str(i).zfill(2)}/" 
@@ -66,16 +66,20 @@ for i in train_ids:
         filename = f"{person_image_data_folder}{j}.jpg"
         train_image_file_list.append(filename)
 
-# eeg、图片组合在一起
-combined_data = list(zip(train_eeg_data, train_image_file_list))
+train_combined_data = list(zip(train_eeg_data, train_image_file_list))
+# 测试集
+test_image_file_list = []
+person_image_data_folder = f"./DEAP/faces/s{str(test_id).zfill(2)}/" 
+for j in range(1, 801):
+    filename = f"{person_image_data_folder}{j}.jpg"
+    test_image_file_list.append(filename)
+test_combined_data = list(zip(test_eeg_data, test_image_file_list))
 
-data = combined_data
-
-train_data = [data[i] for i in train_index]
-test_data = [data[i] for i in test_index]
-train_labels = labels[train_index]
-test_labels = labels[test_index]
-
+data = train_combined_data
+train_data = train_combined_data
+train_labels = train_labels
+test_data = test_combined_data
+test_labels = test_labels
 
 # 设置随机种子
 def set_seed(seed):
