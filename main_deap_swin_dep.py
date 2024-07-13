@@ -17,12 +17,12 @@ import random
     -----------------------------超参数定义--------------------------------
 '''
 # swin模块来源：https://huggingface.co/microsoft/swin-tiny-patch4-window7-224
-# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
-# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224")
+swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 
 # swin_finetuned模块来源：https://huggingface.co/MahmoudWSegni/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12_right
-swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
-swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+# swin_processor = AutoImageProcessor.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
+# swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
 test_id = '1'
 tb_dir = "runs/deap_swin_dep"
@@ -67,6 +67,7 @@ for i in train_ids:
         train_image_file_list.append(filename)
 
 train_combined_data = list(zip(train_eeg_data, train_image_file_list))
+
 # 测试集
 test_image_file_list = []
 person_image_data_folder = f"./DEAP/faces/s{str(test_id).zfill(2)}/" 
@@ -75,7 +76,7 @@ for j in range(1, 801):
     test_image_file_list.append(filename)
 test_combined_data = list(zip(test_eeg_data, test_image_file_list))
 
-data = train_combined_data
+# data = train_combined_data
 train_data = train_combined_data
 train_labels = train_labels
 test_data = test_combined_data
@@ -111,7 +112,7 @@ class MultiModalDataset(torch.utils.data.Dataset):
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
                  num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.2
+                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.2
                  ):
         super(MultiModalClassifier, self).__init__()
         self.transformer_dropout_rate = transformer_dropout_rate
@@ -184,12 +185,6 @@ optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 lf = lambda x: ((1 + math.cos(x * math.pi / epochs)) / 2) * (1 - lrf) + lrf  # cosine
 scheduler = lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
 
-# 分割数据
-train_data = [data[i] for i in train_index]
-test_data = [data[i] for i in test_index]
-train_labels = labels[train_index]
-test_labels = labels[test_index]
-
 # 计算并打印每个类别的数量
 unique_train, counts_train = np.unique(train_labels, return_counts=True)
 unique_test, counts_test = np.unique(test_labels, return_counts=True)
@@ -197,10 +192,10 @@ print("训练集中每个类别的数量：", dict(zip(unique_train, counts_trai
 print("测试集中每个类别的数量：", dict(zip(unique_test, counts_test)))
 
 # 创建数据集、数据加载器
-train_dataset = MultiModalDataset(train_data, train_labels)
-test_dataset = MultiModalDataset(test_data, test_labels)
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+train_dataset = MultiModalDataset(data=train_data, labels=train_labels)
+test_dataset = MultiModalDataset(data=test_data, labels=test_labels)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)
@@ -277,5 +272,5 @@ print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Total runtime: {run_time_min} minutes")
 
-with open('./第四轮/第四轮记录.md', 'a') as f:
+with open('./第六轮/第六轮记录.md', 'a') as f:
     f.write('{}  {}\n'.format(id, max(test_accuracies)))

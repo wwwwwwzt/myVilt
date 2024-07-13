@@ -28,7 +28,7 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 # swin_processor = AutoImageProcessor.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
 # swin_model = SwinModel.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
 
-id = 's07'
+id = 's12'
 tb_dir = "runs/deap_swin4"
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 channels = 32
