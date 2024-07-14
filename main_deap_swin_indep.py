@@ -194,8 +194,8 @@ print("测试集中每个类别的数量：", dict(zip(unique_test, counts_test)
 # 创建数据集、数据加载器
 train_dataset = MultiModalDataset(data=train_data, labels=train_labels)
 test_dataset = MultiModalDataset(data=test_data, labels=test_labels)
-train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
-test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
+test_loader = DataLoader(test_dataset, batch_size=40, shuffle=False)
 
 # scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=max_lr, steps_per_epoch=len(train_loader.dataset) // train_loader.batch_size, epochs=epochs, pct_start=0.20)
 # print("steps_per_epoch:", len(train_loader.dataset) // train_loader.batch_size)

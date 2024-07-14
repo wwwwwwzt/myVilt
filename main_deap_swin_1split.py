@@ -28,9 +28,9 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 # swin_processor = AutoImageProcessor.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
 # swin_model = SwinModel.from_pretrained("./weights/swinv2-tiny-patch4-window8-256")
 
-id = 's12'
+id = 's22'
 tb_dir = "runs/deap_swin4"
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 channels = 32
 samples = 384
 eeg_data = np.load(f"./DEAP/EEGData/{id}_eeg.npy")
