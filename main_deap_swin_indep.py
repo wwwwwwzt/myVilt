@@ -25,8 +25,8 @@ swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224")
 # swin_model = SwinModel.from_pretrained("./weights/swin-tiny-patch4-window7-224-finetuned-face-emotion-v12")
 
 test_id = '1'
-tb_dir = "runs/deap_swin_dep"
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+tb_dir = "runs/deap_swin_dep2"
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 channels = 32
 samples = 384
 eeg_data_folder = './DEAP/EEGData/'
@@ -111,8 +111,8 @@ class MultiModalDataset(torch.utils.data.Dataset):
 # 分类模型
 class MultiModalClassifier(nn.Module):
     def __init__(self, input_size=768, num_classes=4, 
-                 num_heads=12, dim_feedforward=2048, num_encoder_layers=6, device=device, 
-                 eeg_size=384, transformer_dropout_rate=0.2, cls_dropout_rate=0.2
+                 num_heads=12, dim_feedforward=2048, num_encoder_layers=2, device=device, 
+                 eeg_size=384, transformer_dropout_rate=0.1, cls_dropout_rate=0.1
                  ):
         super(MultiModalClassifier, self).__init__()
         self.transformer_dropout_rate = transformer_dropout_rate
@@ -271,6 +271,3 @@ run_time_min = round(run_time_seconds / 60)  # 转换为分钟
 print(f"Start time: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"End time: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"Total runtime: {run_time_min} minutes")
-
-with open('./第六轮/第六轮记录.md', 'a') as f:
-    f.write('{}  {}\n'.format(id, max(test_accuracies)))

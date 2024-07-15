@@ -9,7 +9,7 @@
     6,
     2
   ],
-  "drop_path_rate": 0.2,
+  "drop_path_rate": 0.1,
   "embed_dim": 96,
   "hidden_act": "gelu",
   "hidden_dropout_prob": 0.0,
